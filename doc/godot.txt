@@ -1,0 +1,623 @@
+以下内容按 **Godot 4.7.2-stable**（当前最新稳定版）的真实仓库结构整理。结构信息来自 GitHub API 上该 tag 的实际目录树（顶层、`core/` 全部子目录、`servers/rendering`、`scene/main`、`editor/{gui,scene,docks,plugins}`、`modules/`、`platform/`、`drivers/`、`thirdparty/`、`main/` 等均已核对）。说明一点：仓库有上万文件，其中约一千是 `doc/classes/*.xml`、约两千是 `thirdparty/` 和 `modules/` 里的第三方源码，逐个文件写"作用"没有信息量；因此下面采用 **".h/.cpp 文件对为一个单位 + 目录级依赖说明 + 关键文件的逐文件说明"** 的方式，覆盖全部有架构意义的文件。
+
+---
+
+# 一、顶层：先看仓库骨架
+
+```
+godot/
+├── SConstruct              主构建脚本（SCons 入口）
+├── methods.py              构建公共函数库
+├── platform_methods.py     平台相关构建函数
+├── version.py              版本号定义（被 SConstruct 读入）
+├── scu_builders.py         单编译单元（SCU）生成器
+├── gles3_builders.py       GLES3 着色器 → C++ 头文件生成
+├── glsl_builders.py        GLSL 源内嵌生成
+├── pyproject.toml / .clang-* / .editorconfig / .pre-commit-config.yaml
+├── AUTHORS.md DONORS.md CHANGELOG.md CONTRIBUTING.md COPYRIGHT.txt LICENSE.txt README.md
+├── core/       引擎地基：数据类型、容器、对象模型、IO、OS 抽象
+├── main/       程序入口与主循环（Main::setup / start）
+├── servers/    低层服务抽象：渲染、物理、音频、导航、显示、XR、文本
+├── scene/      场景图与游戏对象：Node、2D/3D 节点、GUI、资源类型、动画
+├── editor/     编辑器（仅 tools=yes 时编译）
+├── modules/    可选功能模块（GDScript、mono、gltf、各图片格式…）
+├── platform/   平台移植层（windows/linuxbsd/macos/android/ios/web/visionos）
+├── drivers/    图形与音频后端（vulkan/d3d12/metal/gles3/alsa/wasapi…）
+├── thirdparty/ 第三方库源码（69 个库）
+├── doc/        文档：classes/*.xml + 生成工具
+├── tests/      doctest 单元测试
+└── misc/       发行脚本、图标、错误抑制、CI 辅助
+```
+
+**编译/链接依赖是一条严格单向的链**，理解它比记文件名重要：
+
+```
+core          （不依赖任何上层；只用 C 运行时 + 少量 thirdparty 头）
+  ↑
+modules/*     （每个模块 config.py 声明 depends；多数只依赖 core，少数依赖 servers/scene/editor）
+  ↑
+servers/*     （依赖 core；渲染依赖 drivers 的 RenderingDevice 后端）
+  ↑
+scene/*       （依赖 core + servers）
+  ↑
+editor/*      （依赖 core + servers + scene + 各模块的 editor 插件部分）
+  ↑
+main/*        （依赖以上全部，负责组装与启动）
+platform/*    （横切：实现 core/os、drivers 所需的平台原语，并被 main 调用）
+```
+
+运行时相反：`main` 调 `register_core_types()` → `register_server_types()` → `register_scene_types()` → `register_editor_types()`，把各层类注册进 `ClassDB`；每个目录的 `register_*_types.cpp` 就是这条注册链的节点。
+
+---
+
+# 二、构建系统：每个目录的 SCsub 才是"该目录的说明书"
+
+| 文件 | 作用 | 依赖关系 |
+|---|---|---|
+| `SConstruct` | 总入口：解析 `platform=`/`target=`/`tools=` 等参数，检测编译器与架构，创建 `env`，按顺序 `SConscript` 各目录，最后链接出 `godot` 可执行文件 | 读 `version.py`、`methods.py`、`platform_methods.py`；生成 `modules/register_module_types.gen.cpp` |
+| `methods.py` | 公共构建函数：`add_source_files`、模块探测（`detect_modules`）、警告开关、`split_lib`、第三方库编译辅助 | 被所有 `SCsub` 调用 |
+| `platform_methods.py` | 架构/平台相关工具：`arch_from_bytes`、目标三元组、平台默认选项 | 被 `platform/*/detect.py` 与 `SConstruct` 使用 |
+| `version.py` | 版本四元组与状态（stable/dev），并写入 `core/version.h` 的宏 | 被 `SConstruct`、`main`、`editor` 读取 |
+| `scu_builders.py` | 把多个 `.cpp` 合并为单个翻译单元（unity build），加速增量编译 | 被 `methods.py` 调用 |
+| `glsl_builders.py` | 把 GLSL 着色器源码转成 C++ 字节数组头文件 | 被 `servers/rendering/**/SCsub` 使用 |
+| `gles3_builders.py` | GLES3 专用着色器变体生成 | 被 `drivers/gles3` 使用 |
+| `*/SCsub`（每个目录一个） | 该目录"编译哪些文件、需要哪些宏、依赖哪些库"的唯一权威说明 | 由父目录 `SCsub` 递归进入 |
+| `modules/*/config.py` | 模块元数据：`can_build`、`depends`、`module_deps`、`enabled` 逻辑 | 被 `methods.py` 与 `SConstruct` 解析 |
+| `*/register_*_types.cpp` | 类型注册入口（core/server/scene/editor/platform/driver/module 各一份） | 向上依赖被注册类的头文件；被 `main` 调用 |
+
+> 经验：想改某个功能，先看它所在目录的 `SCsub` 和 `config.py`，能立刻知道它的编译依赖与可选性。
+
+---
+
+# 三、`core/`：引擎地基（约 420 文件，全部列出）
+
+`core` 只依赖 C 运行时与极少数 header-only 第三方库，是整个引擎的"标准库"。
+
+## 3.1 `core/` 根
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `core_bind.cpp/.h`、`core_bind.compat.inc` | 把 core 层单例与静态工具类集中绑定到 `ClassDB`（供脚本/序列化使用），compat.inc 放兼容性别名 | → `class_db`、`object` |
+| `core_constants.cpp/.h` | 注册全局常量枚举（按键、鼠标、MIDI、错误码、属性提示等） | → `core/input`、`core/error` |
+| `core_globals.h` | 全局宏、前向声明、编译期开关 | 无 |
+| `core_string_names.h` | 高频 `StringName` 的静态缓存（避免重复构造成本） | → `string/string_name` |
+| `doc_data.cpp/.h` | 通过反射从 `ClassDB` 抽取类/属性/方法文档，供 `--doctool` 与编辑器帮助 | → `object/class_db` |
+| `register_core_types.cpp/.h` | core 类型注册总入口：按固定顺序注册所有 core 类 | → 各子目录 |
+| `typedefs.h` | `uint8/uint32/int64` 等基础类型别名 | 无 |
+| `version.h` | 版本宏 `VERSION_MAJOR/MINOR/PATCH/STATUS` | 由 `version.py` 生成 |
+| `core_builders.py` | core 目录的代码生成（如 `doc_data` 相关） | 构建期 |
+
+## 3.2 `core/config/`：全局单例
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `engine.cpp/.h` | `Engine` 单例：帧计数、物理帧、时间缩放、单例注册表、`is_editor_hint()`、退出请求 | → `core/os/time`、`object` |
+| `project_settings.cpp/.h` | `ProjectSettings`：读写 `project.godot`、feature tags、override、国际化、自动加载列表 | → `core/io/config_file`、`variant` |
+
+## 3.3 `core/crypto/`：密码学
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `aes_context.cpp/.h` | AES-ECB/CBC 上下文（mbedtls 封装） | → `thirdparty/mbedtls` |
+| `hashing_context.cpp/.h` | MD5/SHA1/SHA256 流式哈希上下文 | → mbedtls |
+| `crypto.cpp/.h` | `Crypto`（HMAC）、`CryptoKey`、常量时间比较、安全随机数 | → `hashing_context` |
+| `crypto_core.cpp/.h` | `CryptoCore`：常量时间比较与随机字节的核心实现 | → `os` |
+| `crypto_resource_format.cpp/.h` | 加密 `.res`/`.ctex` 等资源的加载格式（密钥来自环境变量） | → `core/io/resource_*` |
+
+## 3.4 `core/debugger/`：调试与性能分析
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `engine_debugger.cpp/.h` | 调试器门面：注册调试器、消息分发、断点请求 | → `debugger_marshalls` |
+| `remote_debugger.cpp/.h` | 远程调试协议服务端（默认 TCP 6007），与编辑器通信 | → `remote_debugger_peer`、`net_socket` |
+| `remote_debugger_peer.cpp/.h` | 调试对端的 TCP/自定义传输封装 | → `stream_peer_tcp` |
+| `local_debugger.cpp/.h` | 本地（编辑器内）调试会话 | → `engine_debugger` |
+| `script_debugger.cpp/.h` | 脚本层断点/单步/栈帧抽象，脚本语言实现它 | ← `script_language` |
+| `debugger_marshalls.cpp/.h` | 调试消息的序列化（Variant → 字节流） | → `variant`、`marshalls` |
+| `engine_profiler.cpp/.h` | 性能剖析数据采集（脚本/引擎/服务器三类） | → `os/time` |
+
+## 3.5 `core/error/`
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `error_macros.cpp/.h` | `ERR_FAIL_*`、`CRASH_*`、`WARN_*` 全家族宏；断言与错误上报 | → `os`（打印） |
+| `error_list.cpp/.h` | `Error` 枚举 → 字符串 | 无 |
+
+## 3.6 `core/extension/`：GDExtension（C API 扩展机制）
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `gdextension.cpp/.h` | `GDExtension` 资源：指向 `.gdextension` 配置与库入口 | → `resource` |
+| `gdextension_manager.cpp/.h` | 扩展的加载/卸载/重载、类与单例注册、兼容性校验 | → `class_db`、`gdextension_library_loader` |
+| `gdextension_library_loader.cpp/.h` | 动态库打开与符号解析（`dlopen`/`LoadLibrary` 抽象） | → `os/shared_object` |
+| `gdextension_function_loader.cpp/.h` | 以函数指针方式提供接口（静态链接扩展用） | → `gdextension_interface` |
+| `gdextension_interface.cpp`、`.json`、`.schema.json` | 官方 C API 表（`GDExtensionInterface`），由脚本生成 | 无 |
+| `extension_api_dump.cpp/.h` | 导出 `extension_api.json`（`--dump-extension-api`） | → `class_db` |
+| `make_wrappers.py` / `make_interface_header.py` | 由接口 JSON 生成 C++ 包装与头文件（构建期） | 构建工具 |
+| `gdextension_resource_format.cpp/.h` | `.gdextension` 资源格式的注册与解析 | → `resource_format_binary` |
+| `gdextension_special_compat_hashes.cpp/.h` | 兼容性哈希白名单 | 无 |
+| `godot_instance.cpp/.h` | GDExtension 对象实例的内存/生命周期管理 | → `object` |
+| `libgodot.h` | 导出给扩展的入口声明 | 无 |
+
+## 3.7 `core/input/`
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `input.cpp/.h` | `Input` 单例：事件队列、动作状态、手柄/触摸/键鼠聚合、`parse_input_event` | → `input_event`、`input_map` |
+| `input_event.cpp/.h` | `InputEvent` 全家族（Key/Mouse/Joystick/Touch/Screen/Action/MIDI…） | → `core/math`、`object` |
+| `input_map.cpp/.h` | `InputMap`：动作↔事件映射、deadzone、持久化 | → `input_event` |
+| `input_event_codec.cpp/.h` | 事件二进制编解码（多人/远程输入） | → `marshalls` |
+| `shortcut.cpp/.h` | `Shortcut` 资源（GUI 快捷键） | → `input_event` |
+| `default_controller_mappings.h`、`godotcontrollerdb.txt`、`gamecontrollerdb.txt` | 内置手柄映射数据库 | 数据文件 |
+| `input_builders.py` | 生成 `input_enums.h`（按键/手柄枚举） | 构建期 |
+
+## 3.8 `core/io/`（107 文件，按家族分组）
+
+**文件访问家族**（`FileAccess` 抽象 + 各后端，全部实现同一接口）：
+
+| 文件 | 作用 |
+|---|---|
+| `file_access.cpp/.h` | 抽象基类：打开/读写/定位/`get_line`；按路径前缀选择后端 |
+| `file_access_memory` | 内存缓冲后端 |
+| `file_access_pack` | PCK 包内文件后端 |
+| `file_access_zip` + `zip_io` | ZIP 包后端（编辑器导入用） |
+| `file_access_compressed` | zstd/gzip 透明解压 |
+| `file_access_encrypted` | AES 加密文件 |
+| `file_access_patched` | 增量补丁包（.pck patch） |
+| `dir_access` | `DirAccess` 抽象：目录枚举/创建/删除，按平台实现 |
+| `pck_packer` | 把资源目录打包成 `.pck` |
+| `resource_uid` | 资源 UID ↔ 路径映射缓存（重构不破坏引用） |
+
+**资源家族**：
+
+| 文件 | 作用 |
+|---|---|
+| `resource.cpp/.h` | `Resource` 基类：路径、UID、本地缓存、信号、场景/资源序列化入口 |
+| `resource_loader.cpp/.h` | `ResourceLoader`：格式分发、缓存、线程加载、依赖扫描 |
+| `resource_saver.cpp/.h` | `ResourceSaver`：按格式保存 |
+| `resource_format_binary` | `.res`/`.scn` 二进制格式 |
+| `resource_importer` | 导入器基类（编辑器导入管线） |
+| `image.cpp/.h`、`image_loader`、`image_resource_format` | 图像数据、格式加载器注册 |
+| `missing_resource` | 丢失资源的占位对象 |
+| `packed_data_container` | 打包的原始字节资源 |
+
+**网络家族**：
+
+| 文件 | 作用 |
+|---|---|
+| `net_socket` | 套接字抽象（TCP/UDP/Unix） |
+| `ip`、`ip_address` | 地址解析与封装 |
+| `stream_peer` + `stream_peer_tcp` / `stream_peer_tls` / `stream_peer_gzip` / `stream_peer_uds` / `stream_peer_socket` | 字节流抽象及各传输 |
+| `packet_peer` / `packet_peer_udp` / `packet_peer_dtls` | 数据报抽象与 DTLS |
+| `tcp_server`、`udp_server`、`uds_server`、`dtls_server`、`socket_server` | 各监听端 |
+| `http_client` + `http_client_tcp` | HTTP/1.1 客户端（含 chunked、重定向） |
+| `remote_filesystem_client` | 运行中游戏把文件系统暴露给编辑器（远程调试） |
+
+**序列化/文本家族**：`marshalls`（Variant 二进制编解码，RPC 基础）、`delta_encoding`（增量压缩，复制同步）、`json` + `json_resource_format`、`xml_parser`、`config_file`（ini）、`plist`（Apple plist）、`translation_loader_po`（gettext）、`compression`（zstd/gzip/deflate）、`logger`（日志后端）。
+
+## 3.9 `core/math/`（89 文件）
+
+| 组 | 文件 | 作用/依赖 |
+|---|---|---|
+| 基础类型 | `vector2/vector2i/vector3/vector3i/vector4/vector4i`、`rect2/rect2i`、`aabb`、`plane`、`quaternion`、`basis`、`transform_2d`、`transform_3d`、`projection`、`color`（+`color_names.inc`）、`face3`、`audio_frame` | 只依赖 `math_defs`/`math_funcs`；是 variant 与所有上层的基础 |
+| 标量函数 | `math_funcs`、`math_funcs_binary.h`、`math_fieldwise`、`math_defs` | 无 |
+| 几何算法 | `geometry_2d`、`geometry_3d`、`triangulate`、`delaunay_2d.h`、`delaunay_3d.h`、`convex_hull`、`quick_hull`、`triangle_mesh` | → 基础类型 |
+| BVH | `bvh.h` + `bvh_*.inc`（cull/debug/refit/split/structs…）、`dynamic_bvh`、`bvh_tree.h`、`static_raycaster` | 供物理/射线检测/遮挡剔除 |
+| 寻路 | `a_star`、`a_star_grid_2d` | → `templates` 容器 |
+| 随机 | `random_pcg`、`random_number_generator` | 无 |
+| 表达式 | `expression` | → `variant`（解析并求值数学表达式） |
+| 插值 | `transform_interpolator` | → `transform_3d` |
+
+## 3.10 `core/object/`：对象模型（引擎的"心脏"）
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `object.cpp/.h`、`object.compat.inc` | `Object` 基类：属性/方法反射、信号、`_notification`、脚本实例挂载、`call`/`get`/`set` | → `class_db`、`variant`、`script_instance` |
+| `class_db.cpp/.h` | `ClassDB`：类注册表、继承链、`MethodBind` 绑定、实例创建、属性列表 | → `method_bind`、`property_info` |
+| `ref_counted.cpp/.h` | 引用计数基类（`Ref<T>`） | → `object` |
+| `method_bind.cpp/.h`、`method_bind_common.h` | `MethodBind` 家族：类型安全的 C++ 成员函数绑定（0~N 参） | → `variant` |
+| `callable_mp.cpp/.h` | 轻量成员函数指针包装（内部信号连接用，比 `Callable` 快） | → `object` |
+| `property_info`、`method_info` | 反射元数据（属性/方法描述） | 无 |
+| `gdtype.cpp/.h` | GDScript 类型枚举与 Variant 类型映射 | → `variant` |
+| `message_queue.cpp/.h` | 跨线程消息队列（延迟调用、线程安全） | → `os/thread` |
+| `script_language.cpp/.h`、`script_language_extension.cpp/.h` | 脚本语言抽象：`Script`/`ScriptInstance`/`ScriptLanguage` 接口，GDExtension 脚本 | ← modules/gdscript、mono 实现 |
+| `script_instance.cpp/.h` | 脚本实例与 Object 的桥接 | → `object` |
+| `script_backtrace.cpp/.h` | 脚本调用栈 | 无 |
+| `undo_redo.cpp/.h` | 撤销/重做栈（编辑器与游戏通用） | → `object` |
+| `worker_thread_pool.cpp/.h` | 工作线程池 + 任务组 | → `os/thread` |
+| `make_virtuals.py` | 生成虚函数表辅助代码（构建期） | 构建工具 |
+
+## 3.11 `core/os/`：平台抽象
+
+| 文件 | 作用 |
+|---|---|
+| `os.cpp/.h` | `OS` 单例：时间、环境变量、命令行、动态库、`alert`、剪贴板、电源、`get_processor_count`；平台实现挂在这里 |
+| `thread.cpp/.h`、`mutex`、`semaphore`、`rw_lock`、`condition_variable`、`spin_lock`、`safe_binary_mutex`、`thread_safe` | 并发原语（平台层用 pthread/win32 实现） |
+| `memory.cpp/.h` | `memalloc/memfree`、内存统计、泄漏检测、`Memory` 单例 |
+| `time.cpp/.h`、`time_enums.h` | 时间/日期、时区、ticks |
+| `main_loop.cpp/.h` | `MainLoop` 抽象：`_initialize/_process/_physics_process/_finalize`，SceneTree 继承它 |
+| `keyboard.cpp/.h` | 键盘布局/键位翻译 |
+| `midi_driver.cpp/.h` | MIDI 输入输出驱动抽象（drivers/winmidi、coremidi 实现） |
+| `shared_object.h`、`process_id.h` | 动态库句柄与进程号封装 |
+
+## 3.12 `core/profiling/`
+
+| 文件 | 作用 |
+|---|---|
+| `profiling.cpp/.h` | `PROFILE_*` 宏、采样区间、条件编译开关 |
+| `profiling_builders.py` | 生成 profiling 采样点代码 |
+
+## 3.13 `core/string/`
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `ustring.cpp/.h` | `String`（UTF-32 内部）全部实现：格式化、查找、编码转换 | → `char_utils`、`locales.h` |
+| `string_name.cpp/.h` | `StringName`：全局驻留字符串，比较 O(1)，大量用于属性/信号名 | → `ustring` |
+| `node_path.cpp/.h` | `NodePath` 类型 | → `ustring` |
+| `string_builder.cpp/.h`、`string_buffer.h` | 高效字符串拼接 | → `ustring` |
+| `print_string.cpp/.h` | `print_line/print_error` 及输出钩子 | → `os` |
+| `translation.cpp/.h`、`translation_server.cpp/.h`、`optimized_translation.cpp/.h`、`plural_rules.cpp/.h` | 翻译资源、翻译服务器、编译期优化查表、复数规则 | → `resource` |
+| `char_utils.h`、`locales.h`、`ucaps.h`、`alt_codes.h` | 字符分类/大小写/区域数据 | 无 |
+| `fuzzy_search.cpp/.h` | 模糊匹配（编辑器搜索） | → `ustring` |
+
+## 3.14 `core/templates/`：容器与内存工具
+
+| 文件 | 作用 |
+|---|---|
+| `cowdata.h` | 写时复制数组（`Vector`/`String` 的底层） |
+| `vector.h` | `Vector<T>`（Godot 自研动态数组） |
+| `hash_map.h`、`hash_set.h`、`a_hash_map.h`、`hashfuncs` | 哈希表/集合；`AHashMap` 为开放寻址实现 |
+| `rb_map.h`、`rb_set.h`、`vset.h` | 红黑树映射/集合（有序，用于编辑器属性排序） |
+| `list.h`、`self_list.h`、`safe_list.h`、`pooled_list.h` | 侵入式链表族 |
+| `rid.h`、`rid_owner.h` | `RID` 句柄与按类型池化分配（服务器资源句柄的基础） |
+| `paged_allocator.h`、`paged_array.h` | 分页分配器/数组 |
+| `local_vector.h`、`fixed_vector.h`、`span.h`、`ring_buffer.h` | 栈上小向量、定长向量、视图、环形缓冲 |
+| `sort_array.h`、`sort_list.h`、`bin_sorted_array.h` | 排序工具 |
+| `lru.h` | LRU 缓存（资源缓存） |
+| `pair.h`、`tuple.h`、`simple_type.h`、`iterable.h`、`bit_field.h` | 基础组合类型 |
+| `safe_refcount.h` | 原子引用计数 |
+| `command_queue_mt.h` | 多线程命令队列（渲染线程提交） |
+| `interpolated_property`、`pass_func` | 属性插值/函数对象辅助 |
+
+## 3.15 `core/variant/`
+
+| 文件 | 作用 |
+|---|---|
+| `variant.cpp/.h`、`variant_internal.h` | `Variant` 联合体：类型标签 + 内联/堆数据 |
+| `variant_op.cpp/.h` | 全部运算符重载（算术/比较/位运算），类型提升规则 |
+| `variant_call.cpp` | `Variant::call`（动态调用方法） |
+| `variant_setget.cpp` | 按索引/属性名 get/set |
+| `variant_construct.cpp`、`variant_destruct.cpp` | 类型构造/析构分发表 |
+| `variant_parser.cpp/.h` | 从字符串解析 Variant（`str_to_var`） |
+| `variant_utility.cpp/.h` | 内置工具函数库（`@GlobalScope` 函数） |
+| `variant_pools.cpp/.h`、`variant_deep_duplicate.h` | 内存池与深拷贝 |
+| `array.cpp/.h`、`typed_array.h` | `Array`/`TypedArray` |
+| `dictionary.cpp/.h`、`typed_dictionary.h` | `Dictionary`/`TypedDictionary` |
+| `callable.cpp/.h`、`callable_bind.cpp/.h` | `Callable`（对象+方法+绑定参数） |
+| `type_info.h`、`variant_caster.h`、`method_ptrcall.h`、`native_ptr.h`、`binder_common.h`、`container_type_validate.h` | 类型萃取、参数编组（ptrcall）、绑定宏基础设施 |
+
+---
+
+# 四、`main/`：程序入口（13 个文件）
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `main.cpp` | 全部启动逻辑：`Main::setup()` 解析命令行、初始化 OS/显示/音频/物理/渲染、加载项目设置；`setup2()` 建窗口、加载自动加载与主场景；`start()` 进入主循环；`iteration()` 每帧驱动 | → 所有层 |
+| `main.h` | `Main` 类声明、`MainLoop` 相关接口 | — |
+| `main_timer_sync.cpp/.h` | 帧率同步/帧时间平滑（vsync 与物理步长补偿） | → `os/time` |
+| `performance.cpp/.h`、`performance.compat.inc` | `Performance` 单例：FPS、内存、对象数、渲染统计的采集与暴露 | → `servers` |
+| `steam_tracker.cpp/.h` | Steam 运行环境检测/统计辅助（4.7 中新增的辅助类，供平台层与统计使用） | → `os` |
+| `main_builders.py`、`app_icon.png`、`splash.png` | 构建期资源生成（图标、启动画面） | 构建期 |
+
+---
+
+# 五、`servers/`：低层服务
+
+`servers` 定义"引擎能力"的抽象接口，具体实现分散在 `drivers/` 与 `servers/rendering/renderer_rd/`。所有 `*_server.cpp` 都通过 `RID` 暴露句柄，向上层隐藏真实资源。
+
+## 5.1 `servers/rendering/`（核心中的核心）
+
+| 文件 | 作用 |
+|---|---|
+| `rendering_server.cpp/.h`、`.compat.inc` | `RenderingServer` 单例：画布/网格/材质/纹理/灯光的 RID 管理，命令缓冲与多线程提交 |
+| `rendering_server_default.cpp/.h` | 默认实现：把 RS 调用转给 `RendererCompositor` |
+| `rendering_server_globals.h`、`rendering_server_types.h`、`rendering_server_enums.h` | 全局实例与枚举 |
+| `renderer_compositor.cpp/.h` | 渲染器组合器抽象（RD / dummy 两种实现） |
+| `renderer_scene_cull.cpp/.h` | 场景剔除：视锥/遮挡/层，生成可见实例列表 |
+| `renderer_scene_occlusion_cull.cpp/.h` | 遮挡剔除（HZB） |
+| `renderer_scene_render.cpp/.h` | 场景渲染流程基类 |
+| `renderer_canvas_cull.cpp/.h`、`renderer_canvas_render.cpp/.h` | 2D 画布剔除与渲染 |
+| `renderer_viewport.cpp/.h` | 视口/渲染目标管理 |
+| `renderer_geometry_instance.cpp/.h` | 几何实例数据布局 |
+| `rendering_device.cpp/.h`、`.compat.inc` | `RenderingDevice`：现代图形 API 抽象（命令缓冲、管线、描述符、屏障），驱动层实现 |
+| `rendering_device_driver.cpp/.h` | RD 的后端接口（Vulkan/D3D12/Metal 实现此接口） |
+| `rendering_device_graph.cpp/.h` | 渲染图：自动依赖排序与资源屏障 |
+| `rendering_device_commons.cpp/.h`、`rendering_device_binds.cpp/.h` | 公共结构体与脚本绑定 |
+| `rendering_context_driver.cpp/.h` | 上下文/交换链驱动（窗口表面） |
+| `rendering_light_culler.cpp/.h` | 光源剔除与聚类输入 |
+| `rendering_shader_container.cpp/.h`、`rendering_shader_library.h`、`shader_compiler.cpp/.h` | 着色器容器、库与编译器接口 |
+| `shader_language.cpp/.h` | Godot 着色语言：词法/语法/语义/类型检查 |
+| `shader_preprocessor.cpp/.h`、`shader_include_db.cpp/.h` | `#include` 预处理 |
+| `shader_expression.cpp/.h` | 着色器常量表达式求值 |
+| `shader_types.cpp/.h` | 内建函数/内置变量表 |
+| `shader_warnings.cpp/.h` | 着色器警告 |
+| `environment/` | 环境/天空/雾/后处理参数结构 |
+| `storage/` | 纹理/网格等存储抽象 |
+| `dummy/` | 无渲染后端的空实现（headless） |
+| `renderer_rd/` | RD 渲染器：`forward_clustered/`（桌面主路径）、`forward_mobile/`（移动）、`effects/`（SSAO/SSR/泛光/体积雾…）、`environment/`、`shaders/`、`storage_rd/`、`cluster_builder_rd`、`pipeline_cache_rd`、`uniform_set_cache_rd`、`framebuffer_cache_rd`、`renderer_canvas_render_rd`、`renderer_scene_render_rd`、`renderer_compositor_rd`、`shader_rd` |
+
+## 5.2 其他 server
+
+| 文件/目录 | 作用 |
+|---|---|
+| `register_server_types.cpp/.h` | 注册所有 server 类 |
+| `server_wrap_mt_common.h` | 多线程命令包装宏（`RenderingServer` 等线程安全转发） |
+| `audio/` | `audio_server`（总线/混音/效果）、`audio_driver`（后端接口）、`audio_effect*`、`audio_filter*`、`speaker_layout` |
+| `physics_2d/`、`physics_3d/` | `physics_server_2d/3d` 抽象 + `*_server_sw`（GodotPhysics 实现）+ `*_direct_body`、`*_space`、`*_shape`、`step_2d/3d`（求解器） |
+| `navigation_2d/`、`navigation_3d/` | `navigation_server_2d/3d`、地图/区域/路径查询、navmesh 构建 |
+| `camera/` | `camera_server` + `camera_feed`（手机摄像头/桌面摄像头） |
+| `display/` | `display_server`（窗口/输入/屏幕/剪贴板抽象）、`display_server_headless`、`screen` |
+| `text/` | `text_server`（字体栅格化、排版、`shaped_text`）、`font`、`text_line` |
+| `xr/` | `xr_server`、`xr_interface`（OpenXR 等在 modules 实现） |
+| `movie_writer/` | 视频录制抽象（`movie_writer` + 各编码器） |
+| `debugger/` | `servers_debugger`：向编辑器暴露 server 状态（性能、渲染信息） |
+| `nav_heap.h` | 导航用的堆结构 |
+
+---
+
+# 六、`scene/`：场景图与游戏对象
+
+## 6.1 `scene/main/`（38 文件，全部）
+
+| 文件 | 作用 | 依赖 |
+|---|---|---|
+| `node.cpp/.h`、`.compat.inc` | `Node`：树结构、生命周期通知、组、RPC 配置、`_process/_physics_process`、`@export` 存储 | → `object`、`scene_tree` |
+| `scene_tree.cpp/.h` | `SceneTree`：主循环实现、节点树根、`process/physics_process` 广播、暂停、场景切换、`MultiplayerAPI` 持有 | → `main_loop`、`window` |
+| `scene_tree_fti.cpp/.h`、`scene_tree_fti_tests.cpp/.h` | 场景树快速遍历（flattened tree iteration）辅助结构及自测，性能敏感路径使用 | → `node` |
+| `viewport.cpp/.h`、`.compat.inc` | `Viewport`：渲染目标、输入坐标变换、相机、世界 2D/3D、GUI 根 | → `RenderingServer` |
+| `window.cpp/.h` | `Window`：原生窗口、嵌入窗口、DPI、模态 | → `DisplayServer` |
+| `canvas_item.cpp/.h`、`.compat.inc` | `CanvasItem`：2D 绘制基类、变换、材质、可见性、`_draw` | → `Node`、`RenderingServer` |
+| `canvas_layer.cpp/.h` | `CanvasLayer`：独立 2D 层 |
+| `timer.cpp/.h` | `Timer` 节点（`SceneTreeTimer` 的节点版） |
+| `http_request.cpp/.h` | `HTTPRequest` 节点：把 `HTTPClient` 包装成异步节点 | → `core/io/http_client` |
+| `multiplayer_api.cpp/.h`、`multiplayer_peer.cpp/.h` | 高层多人 API 与传输抽象（ENet/WebSocket 在 modules 实现） | → `core/io` |
+| `resource_preloader.cpp/.h` | `ResourcePreloader` 节点 |
+| `missing_node.cpp/.h` | 丢失节点占位 |
+| `instance_placeholder.cpp/.h` | 场景实例占位（延迟实例化） |
+| `status_indicator.cpp/.h` | 状态指示器（加载/录制等） |
+| `shader_globals_override.cpp/.h` | 全局着色器参数覆盖 |
+
+## 6.2 `scene/2d/`
+
+节点家族：`node_2d`（2D 变换根）、`sprite_2d`、`animated_sprite_2d`、`character_body_2d`、`rigid_body_2d`、`static_body_2d`、`area_2d`、`collision_object_2d`/`collision_shape_2d`/`collision_polygon_2d`、`shape_cast_2d`/`ray_cast_2d`、`camera_2d`、`light_2d`、`point_light_2d`/`directional_light_2d`、`canvas_modulate`、`parallax_2d`/`parallax_layer`/`parallax_background`、`tile_map`/`tile_map_layer`/`tile_set`/`tile_set_atlas_source`/`tile_set_scenes_collection_source`、`path_2d`/`path_follow_2d`、`line_2d`、`polygon_2d`、`navigation_region_2d`/`navigation_agent_2d`/`navigation_obstacle_2d`/`navigation_link_2d`、`joint_2d` 家族（pin/groove/damped_spring）、`cpu_particles_2d`/`gpu_particles_2d`/`particle_*`、`visible_on_screen_notifier_2d`、`remote_transform_2d`、`marker_2d`、`back_buffer_copy`、`skeleton_2d`/`bone_2d`、`audio_listener_2d`、`camera_2d`、`quad_mesh`/`mesh_instance_2d` 等。**依赖**：`Node`/`CanvasItem` + 对应 `*Server2D`；物理节点只调 `PhysicsServer2D`。
+
+## 6.3 `scene/3d/`
+
+`node_3d`、`mesh_instance_3d`、`camera_3d`、`light_3d`（`omni/spot/directional`）、`world_environment`、`environment`（资源）、`reflection_probe`、`fog_volume`、`physics_body_3d`（rigid/static/character/animatable）、`area_3d`、`collision_shape_3d`、`shape_cast_3d`、`ray_cast_3d`、`spring_arm_3d`、`skeleton_3d`/`bone_attachment_3d`、`soft_body_3d`、`vehicle_body_3d`/`vehicle_wheel_3d`、`grid_map`（在 modules）、`navigation_region_3d`/`navigation_agent_3d`、`path_3d`/`path_follow_3d`、`gpu_particles_3d`/`particle_*`、`cpu_particles_3d`、`occluder_3d`/`occluder_instance_3d`、`visible_on_screen_notifier_3d`、`remote_transform_3d`、`marker_3d`、`xr_node_3d`/`xr_controller_3d`/`xr_origin_3d`、`audio_listener_3d`、`audio_stream_player_3d`、`importer_mesh_instance_3d`。**依赖**：`Node3D` + `RenderingServer` + `PhysicsServer3D`。
+
+## 6.4 `scene/gui/`（GUI 控件，约 100 文件）
+
+核心：`control.cpp/.h`（锚点/边距/尺寸标志/主题/焦点/输入分发）→ `container`（布局基类）→ `box_container`/`h_box_container`/`v_box_container`/`grid_container`/`flow_container`/`margin_container`/`center_container`/`split_container`/`scroll_container`/`tab_container`/`aspect_ratio_container`/`panel_container`。
+
+文本与输入：`label`、`rich_text_label`、`text_edit`、`line_edit`、`code_edit`（基础编辑能力，编辑器 `code_editor` 继承）、`spin_box`、`slider`、`progress_bar`、`button`/`check_box`/`check_button`/`option_button`/`menu_button`/`link_button`/`texture_button`、`item_list`、`tree`、`popup`/`popup_menu`/`popup_panel`、`file_dialog`/`accept_dialog`/`confirmation_dialog`、`color_picker` 家族、`graph_edit`/`graph_node`/`graph_frame`、`texture_rect`/`nine_patch_rect`/`color_rect`/`reference_rect`、`video_stream_player`、`sub_viewport_container`、`view_panner`、`separator`、`tabs`、`range`（滑块基类）、`dial`、`font_picker`? （编辑器侧）、`script_editor`? （editor）。**依赖**：`Control` + `Theme` + `TextServer` + `RenderingServer`。
+
+## 6.5 `scene/resources/`
+
+| 组 | 文件 |
+|---|---|
+| 3D 资源 | `mesh`、`mesh_instance`?（在 3d）、`primitive_meshes`、`array_mesh`、`immediate_mesh`、`material`、`standard_material`?（在 3d）、`shader`、`shader_include`、`sky`、`environment`、`skeleton_3d`、`skin`、`bone_map`、`animation_library`?（animation/） |
+| 2D 资源 | `tile_set`、`font`、`font_file`、`font_variation`、`system_font`、`bit_map`、`bit_map_font`、`curve`、`gradient`、`gradient_texture`、`noise_texture`?（module）、`style_box`、`style_box_flat`/`texture`/`line`/`empty` |
+| 通用 | `shape_2d`/`shape_3d`（circle/rect/capsule/segment/world_boundary/convex_polygon/concave_polygon/box/sphere/cylinder/heightmap）、`packed_scene`、`scene_replication_config`?（Multiplayer）、`world_2d`/`world_3d`、`crypto_key`?（core）、`resource_format_*`（core） |
+
+**依赖**：资源类只依赖 `core/io/resource` + 对应 server 的"格式描述"结构体，不直接持有 GPU 资源（GPU 资源由 server 按需创建）。
+
+## 6.6 `scene/animation/`
+
+`animation.cpp/.h`（轨道/关键帧/插值/方法轨道）、`animation_player`、`animation_tree`、`animation_mixer`、`animation_node_*`（animation/blend_space_1d/blend_space_2d/blend_tree/state_machine/state_machine_playback/state_machine_transition/time_scale/time_seek/oneshot/sync）、`animation_library`、`tween`/`property_tweener`/`interval_tweener`/`callback_tweener`/`method_tweener`、`root_motion_view`、`skeleton_modifier_3d`。**依赖**：`Resource` + `Node` + `SceneTree`（Tween 由 SceneTree 驱动）。
+
+## 6.7 其他
+
+| 目录/文件 | 作用 |
+|---|---|
+| `scene/audio/` | `audio_stream_player`、`audio_stream_player_2d/3d`、`audio_listener_2d/3d`、`audio_stream_*`?（`AudioStream` 资源在 `servers`/`scene/resources`）、`audio_effect*` 资源 |
+| `scene/debugger/scene_debugger.cpp/.h` | 远程场景树/属性检查、运行时对象编辑 |
+| `scene/theme/theme.cpp/.h`、`theme_db.cpp/.h` | 主题资源与全局主题数据库、图标/字体/样式缓存 |
+| `scene/property_utils.cpp/.h` | 属性复制/差异比较（编辑器复制粘贴、场景继承） |
+| `scene/property_list_helper.cpp/.h` | `_get_property_list` 辅助构建器 |
+| `scene/register_scene_types.cpp/.h` | 场景层类型注册入口 |
+| `scene/scene_string_names.h` | 场景层常用 `StringName` 缓存 |
+
+---
+
+# 七、`editor/`：编辑器（仅 `tools=yes` 编译）
+
+`editor` 是最大的一层，但结构非常规整：**入口 + 服务 + 面板 + 插件 + 导入/导出管线**。
+
+| 文件/目录 | 作用 |
+|---|---|
+| `editor_node.cpp/.h` | 编辑器主控：菜单、布局、打开/保存场景、运行/停止、构建、插件加载、退出流程 |
+| `editor_data.cpp/.h` | 编辑器全局状态：打开的场景、选中对象、历史、场景页签、`EditorSelection` |
+| `editor_interface.cpp/.h`、`.compat.inc` | 暴露给插件/脚本的稳定 API（`EditorInterface` 单例） |
+| `editor_main_screen.cpp/.h` | 主屏幕（2D/3D/Script/AssetLib）切换基类 |
+| `editor_log.cpp/.h` | 输出/错误面板 |
+| `editor_undo_redo_manager.cpp/.h` | 编辑器级撤销栈（多场景共享） |
+| `editor_string_names.h` | 编辑器高频 `StringName` |
+| `editor_builders.py`、`template_builders.py` | 构建期：版本/模板生成 |
+| `register_editor_types.cpp/.h` | 编辑器类型注册入口 |
+| `animation/` | 动画编辑器：时间轴、关键帧、曲线编辑、动画树编辑（`animation_player_editor_plugin`、`animation_tree_editor_plugin`、`animation_blend_space_*_editor`） |
+| `asset_library/` | 资源库面板（在线模板/素材） |
+| `audio/` | 音频总线编辑器、音效预览 |
+| `debugger/` | 编辑器侧调试器：断点、栈、性能分析器（`editor_debugger_server`、`script_editor_debugger`、`editor_profiler`、`editor_performance_profiler`） |
+| `doc/` | 文档编辑器/帮助系统，读取 `doc/classes/*.xml` 与运行时 `doc_data` |
+| `docks/` | 停靠面板：`filesystem_dock`（资源浏览器）、`scene_tree_dock`、`inspector_dock`、`import_dock`、`history_dock`、`groups_dock`、`signals_dock`、`dock_tab_container`、`editor_dock_manager` |
+| `export/` | 导出管线：`editor_export_platform`（平台基类）+ `editor_export_platform_pc/android/ios/web`、`editor_export_preset`、`editor_export_plugin`、模板管理 |
+| `file_system/` | 资源文件系统：扫描、导入队列、`.godot/` 缓存、`editor_file_system`、`editor_import_plugin` 调度 |
+| `gui/` | 通用编辑器控件：`code_editor`、`editor_file_dialog`、`create_dialog`、`editor_quick_open_dialog`（Ctrl+P）、`progress_dialog`、`editor_toaster`、`editor_title_bar`、`window_wrapper`、`filter_line_edit`、`credits_roll`、`editor_about` |
+| `import/` | 各资源导入器：纹理/模型/音频/字体/动画/场景（`editor_import_*`、`resource_importer_*` 的编辑器侧实现） |
+| `inspector/` | 属性检查器：`editor_inspector`、`editor_properties`（各类型编辑器）、`editor_property_name_processor`、`editor_autoload_settings`?（settings/） |
+| `plugins/` | 插件**基类**：`editor_plugin`、`editor_plugin_list`、`editor_plugin_settings`、`editor_resource_conversion_plugin`、`plugin_config_dialog` |
+| `project_manager/` | 项目管理器（未打开项目时的独立界面）：项目列表、模板、导入/新建项目 |
+| `project_upgrade/` | 旧版本项目升级转换器 |
+| `run/` | 运行/调试实例管理：`editor_run`、`editor_run_native`、游戏窗口嵌入 |
+| `scene/` | 场景编辑：`canvas_item_editor_plugin`（2D 编辑器）、`scene_tree_editor`、`connections_dialog`（信号连接）、`rename_dialog`、`reparent_dialog`、`scene_create_dialog`、`packed_scene_editor_plugin`、`material_editor_plugin`、`mesh_editor_plugin`?、`gradient_editor_plugin`、`curve_editor_plugin`、`particles_editor_plugin`、`sprite_frames_editor_plugin`、`resource_preloader_editor_plugin`、`group_settings_editor`，以及 `2d/`、`3d/`、`gui/`、`texture/` 子目录（3D 编辑器工具、gizmo、相机、光照、导航、碰撞形状编辑） |
+| `script/` | 脚本编辑器：`script_editor`、`script_text_editor`、`script_create_dialog`、`script_editor_base`、`debugger` 集成 |
+| `settings/` | 项目设置/编辑器设置/键位映射/自动加载/插件设置界面（`project_settings_editor`、`editor_settings_dialog`、`editor_shortcuts`、`editor_autoload_settings`） |
+| `shader/` | 可视化着色器编辑器（`visual_shader_editor_plugin`、`shader_editor`、`shader_create_dialog`） |
+| `themes/` | 编辑器主题与图标（`editor_themes`、`editor_icons`、`theme_*` 生成） |
+| `translations/` | 编辑器界面翻译加载 |
+| `version_control/` | 版本控制插件接口（Git 由插件实现） |
+| `icons/` | SVG 图标资源（构建时转为纹理） |
+
+**依赖**：`editor` 依赖 `scene`/`servers`/`core`，并通过 `EditorPlugin` 反向被 `modules/*/editor/` 扩展（如 `gdscript` 的编辑器部分、`gltf` 的导入、`mono` 的 C# 支持）。
+
+---
+
+# 八、`modules/`：57 个可选模块
+
+每个模块的固定结构：`config.py`（元数据/依赖）、`SCsub`（构建）、`register_types.cpp/.h`（注册）、其余为实现文件。**依赖声明在 `config.py` 的 `depends`/`module_deps` 中**，构建系统据此决定编译顺序与可用性。
+
+| 模块 | 关键文件 | 作用 / 依赖 |
+|---|---|---|
+| `gdscript` | `gdscript.cpp`、`gdscript_parser`、`gdscript_tokenizer`、`gdscript_analyzer`、`gdscript_compiler`、`gdscript_byte_codegen`、`gdscript_codegen`、`gdscript_vm`、`gdscript_function`、`gdscript_cache`、`gdscript_editor`（+`_complete`）、`gdscript_highlighter`、`gdscript_lambda_callable`、`gdscript_rpc_callable`、`gdscript_warning`、`gdscript_utility_functions`、`gdscript_generic_parser`? | GDScript 语言全部：词法→语法→语义分析→字节码→VM；`gdscript_editor` 提供编辑器补全/格式化。依赖 core（`script_language`）+ editor（编辑器部分） |
+| `mono` | `csharp_script`、`godotsharp`、`glue/`、`editor/`、`utils/` | C#/.NET 支持（.NET SDK 外部依赖） |
+| `gltf` | `gltf_document`、`gltf_state`、`gltf_spec_gloss`、`editor/gltf_importer`、`structures/` | glTF 2.0 导入导出，依赖 `scene` + `editor` |
+| `fbx` | `fbx_importer`、`ufbx` 桥接 | FBX 导入（基于 thirdparty/ufbx） |
+| `csg` | `csg.cpp`、`csg_shape`、`csg_box/sphere/cylinder/torus/polygon/mesh`、`csg_combiner` | 构造实体几何，依赖 `scene` |
+| `gridmap` | `grid_map`、`grid_map_editor_plugin` | 3D 网格地图，依赖 `scene` + `editor` |
+| `navigation_2d/3d` | `navigation_mesh_2d/3d`、`navigation_mesh_generator`、`navigation_polygon`、`navigation_region`? | 编辑器内导航网格烘焙 |
+| `godot_physics_2d/3d` | `*_server_sw`、`*_body_*`、`*_shape_*`、`*_joint_*`、`*_step` | 内置 GodotPhysics 实现（`servers/physics_*` 接口） |
+| `jolt_physics` | `jolt_physics_server_3d`、`jolt_*` | Jolt 物理后端（默认 3D 物理） |
+| `text_server_adv` | `text_server_adv`、`font_*`、`shaped_text`、`text_line`、`icu` 桥接 | 高级文本（ICU/HarfBuzz），依赖 `servers/text` |
+| `text_server_fb` | `text_server_fb` | 回退文本服务器（内置位图字体） |
+| `freetype` | `font_freetype`?、`register_types` | FreeType 字体栅格化 |
+| `msdfgen` | `msdfgen` 封装 | MSDF 字体生成 |
+| `svg` | `image_loader_svg`（thorvg） | SVG 导入 |
+| `png/jpg/webp/tga/bmp/hdr/ktx/dds/astcenc/bcdec/cvtt/etcpak/basis_universal/tinyexr/theora/ogg/vorbis/mp3` | `image_loader_*` / `*_stream` / 编解码器 | 图片与音视频格式支持；`basis_universal` 提供纹理压缩（`.basis`） |
+| `regex` | `regex.cpp`（pcre2） | 正则表达式 |
+| `jsonrpc` | `jsonrpc.cpp` | JSON-RPC 协议（编辑器/LSP） |
+| `websocket` / `webrtc` / `webxr` / `upnp` / `enet` / `multiplayer` | `websocket_peer`、`webrtc_peer_connection`、`webxr_interface`、`upnp`、`enet_*`、`multiplayer_spawner`/`multiplayer_synchronizer` | 网络与多人；`enet` 依赖 core，`multiplayer` 依赖 scene |
+| `openxr` / `mobile_vr` | `openxr_interface`、`mobile_vr_interface` | XR 运行时，依赖 `servers/xr` |
+| `lightmapper_rd` | `lightmapper_rd` | GPU 光照烘焙，依赖 `servers/rendering` |
+| `visual_shader` | `visual_shader`、`visual_shader_nodes`、`visual_shader_editor` | 可视化着色器资源与编辑器 |
+| `noise` | `noise`、`fast_noise_lite`、`noise_texture_*` | 程序化噪声 |
+| `camera` | `camera_feed`? | 摄像头（`servers/camera`） |
+| `interactive_music` | `audio_stream_interactive`、`audio_stream_playback_interactive` 及各类 transition/segment | 交互式音乐流（4.x 新增） |
+| `objectdb_profiler` | `objectdb_profiler` | 运行时对象数据库快照/差异（调试器用） |
+| `betsy` | `betsy` | 纹理压缩/重采样（BC 系列） |
+| `meshoptimizer` | `meshoptimizer` 封装 | 网格优化 |
+| `xatlas_unwrap` | `xatlas` 封装 | 自动 UV 展开 |
+| `vhacd` | `vhacd` 封装 | 凸包分解（碰撞） |
+| `glslang` | `glslang` 封装 | GLSL→SPIR-V（着色器编译） |
+| `zip` | `zip_packer`? / `zip_reader` | ZIP 读写（基于 minizip） |
+| `mbedtls` | `mbedtls` 封装、`crypto_mbedtls` | TLS/密码学后端（core/crypto 真正实现） |
+
+`modules/register_module_types.h` + 构建期生成的 `register_module_types.gen.cpp` 负责按顺序调用各模块的 `register_*_types()`。
+
+---
+
+# 九、`platform/`：移植层
+
+| 目录 | 关键文件 | 作用 / 依赖 |
+|---|---|---|
+| `platform/SCsub`、`platform_builders.py`、`register_platform_apis.h` | 平台构建框架与 API 注册 | 被各平台 `detect.py`/`SCsub` 使用 |
+| `windows/` | `os_windows`、`display_server_windows`、`gl_manager_windows`、`crash_handler_windows`、`windows_terminal_logger`、`detect.py`、`godot.rc`、`export/` | 实现 `OS`/`DisplayServer`/`MainLoop` 集成；依赖 `core/os` + `drivers/{windows,d3d12,vulkan,wasapi}` |
+| `linuxbsd/` | `os_linuxbsd`、`display_server_x11`/`wayland`、`gl_manager_x11/wayland`、`crash_handler_linuxbsd`、`detect.py`、`export/` | 同上，X11/Wayland 双后端 |
+| `macos/` | `os_macos`、`display_server_macos`、`gl_manager_macos`、`crash_handler_macos`、`export/`、`platform_macos.h` | 同上，Metal/GL 后端 |
+| `android/` | `os_android`、`display_server_android`、`android_input_handler`、`plugin/`、`export/`、`java/`、`detect.py` | JNI 桥、Android 输入/生命周期 |
+| `ios/` | `os_ios`、`display_server_ios`、`ios_view`、`export/` | UIKit 生命周期 |
+| `visionos/` | `os_visionos`、`display_server_visionos`、`export/` | visionOS（Metal/CompositorServices） |
+| `web/` | `os_web`、`display_server_web`、`emscripten/`、`export/`、`web_main.cpp` | Emscripten 主循环、WebGL/WebGPU |
+| `platform/*/export/` | `export_plugin`（`EditorExportPlatform` 子类）、模板配置 | 仅编辑器编译 |
+
+**依赖方向**：`platform/*` 实现 `core`、`servers/display`、`drivers` 所需的平台原语，并被 `main` 调用；它与 `drivers` 的分工是"窗口/事件/生命周期 vs 图形 API/音频设备"。
+
+---
+
+# 十、`drivers/`：硬件后端
+
+| 目录 | 作用 |
+|---|---|
+| `vulkan/`、`d3d12/`、`metal/` | `RenderingDeviceDriver` 实现（Vulkan/D3D12/Metal）→ 被 `servers/rendering/rendering_device` 调用 |
+| `gles3/` | OpenGL ES 3 / GL 3.3 渲染器（兼容路径），含 `rasterizer_*` 与着色器缓存 |
+| `egl/`、`gl_context/` | EGL 上下文与 GL 上下文抽象（窗口系统桥接） |
+| `sdl/` | SDL 后端（输入/窗口/手柄；4.x 中用于部分平台统一输入与游戏手柄） |
+| `alsa/`、`pulseaudio/`、`coreaudio/`、`wasapi/`、`xaudio2/` | 音频输出驱动 |
+| `alsamidi/`、`coremidi/`、`winmidi/` | MIDI 输入输出 |
+| `windows/`、`unix/`、`apple/`、`apple_embedded/` | 平台公共代码（文件对话框、崩溃处理、线程/时间原语） |
+| `accesskit/` | 无障碍（屏幕阅读器）桥接（Windows/macOS/Linux） |
+| `png/` | PNG 编解码桥 |
+| `backtrace/` | 崩溃栈打印（libbacktrace） |
+| `register_driver_types.cpp/.h` | 驱动类型注册入口 |
+
+---
+
+# 十一、`thirdparty/`：69 个第三方库
+
+一行一个，按用途分组：
+
+- **图形/着色器**：`vulkan`、`volk`、`directx_headers`、`d3d12ma`、`metal-cpp`、`glad`、`angle`、`spirv-headers`、`spirv-cross`、`spirv-reflect`、`re-spirv`、`glslang`、`smaa`、`amd-fsr`、`amd-fsr2`、`swappy-frame-pacing`、`embree`（光线追踪加速，可选）
+- **纹理/图像**：`astcenc`、`basis_universal`、`betsy`?（模块内）、`cvtt`、`etcpak`、`libktx`、`libpng`、`libjpeg-turbo`、`libwebp`、`tinyexr`、`thorvg`（SVG）、`msdfgen`、`xatlas`、`meshoptimizer`、`manifold`、`clipper2`
+- **字体/文本**：`freetype`、`harfbuzz`、`icu4c`、`graphite`、`fonts`、`grisu2`（浮点格式化）
+- **音频/视频**：`libogg`、`libvorbis`、`libtheora`、`dr_libs`（mp3/flac/wav）
+- **网络/加密**：`mbedtls`、`certs`、`enet`、`wslay`（WebSocket）、`miniupnpc`、`brotli`、`zlib`、`zstd`、`minizip`
+- **物理/导航**：`jolt_physics`、`recastnavigation`、`rvo2`、`vhacd`
+- **平台/系统**：`sdl`、`wayland`、`wayland-protocols`、`linuxbsd_headers`、`mingw-std-threads`、`libbacktrace`、`accesskit`
+- **XR**：`openxr`
+- **工具/杂项**：`doctest`（测试）、`ufbx`、`misc`、`README.md`
+
+> 这些库以"源码内嵌 + 自身 SCsub"的方式编译，Godot 一般不做修改（补丁集中在 `patches/` 或 `thirdparty/README.md` 记录）。
+
+---
+
+# 十二、`doc/`、`tests/`、`misc/`、`.github/`
+
+| 路径 | 说明 |
+|---|---|
+| `doc/classes/*.xml` | 约 1000 个类参考文档，是 `ClassDB` 文档的**唯一事实来源**；`--doctool` 可回写 |
+| `doc/Doxyfile`、`doc/Makefile`、`doc/class.xsd`、`doc/tools/`、`doc/translations/` | 文档构建、XML schema 校验、翻译 |
+| `tests/`（259 文件） | `test_main.cpp` + `test_*.h`，基于 doctest；分 `core/`、`scene/`、`servers/`、`modules/` 等，`--test` 运行 |
+| `misc/dist/` | 发行脚本、桌面文件、图标、macOS/Windows 打包模板 |
+| `misc/scripts/` | CI/发布辅助（`clang-format`、`codespell`、`copyright` 检查） |
+| `misc/error_suppressions/` | ASAN/UBSAN/Valgrind 抑制文件 |
+| `misc/extension_api_validation/` | GDExtension API 兼容性校验基线（防止破坏扩展 ABI） |
+| `misc/msvs/`、`misc/utility/`、`misc/logo/` | VS 工程生成、杂项工具 |
+| `.github/workflows/` | CI：Linux/macOS/Windows/Android/Web 构建、单元测试、静态检查、文档校验 |
+
+---
+
+# 十三、把依赖串起来：几条真实调用链
+
+**1）画一个精灵**
+`scene/2d/sprite_2d.cpp` → `CanvasItem::_draw` → `RenderingServer::canvas_item_add_texture_rect` → `RendererCanvasCull` → `RendererCanvasRenderRD` → `RenderingDevice` → `drivers/vulkan`（或 d3d12/metal）。
+
+**2）输入**
+`platform/windows/display_server_windows`（WndProc）→ `Input::parse_input_event` → `InputMap` 匹配动作 → `SceneTree::_call_input_pause` → `Node::_input/_unhandled_input` → `Control::gui_input`。
+
+**3）物理**
+`RigidBody3D`（scene/3d）→ `PhysicsServer3D`（servers/physics_3d）→ `godot_physics_3d` 或 `jolt_physics`（modules）→ `body/space/step` 求解 → 回调 `_integrate_forces`。
+
+**4）资源加载**
+`ResourceLoader::load("res://x.tscn")` → 按扩展名选 `ResourceFormatLoader`（`resource_format_binary` / `image_loader_png` / `gltf` 模块）→ `FileAccess` 后端（PCK/ZIP/磁盘/加密）→ `ResourceCache` 命中检查 → 实例化。
+
+**5）脚本**
+`.gd` 文件 → `GDScriptLanguage::load`（modules/gdscript）→ `GDScriptParser`→`Analyzer`→`Compiler`/`ByteCodeGen` → `GDScript` 资源 → `GDScriptInstance`（实现 `ScriptInstance`）挂到 `Object` → `GDScriptFunction::call` 在 VM 中执行。
+
+**6）编辑器启动**
+`main/main.cpp` → `EditorNode`（editor/editor_node）→ `EditorFileSystem` 扫描 → `EditorImportPlugin` 队列 → `EditorInspector`/`SceneTreeDock`/`EditorPlugin` 加载 → 运行游戏时 `EditorRun` 启动子进程或嵌入窗口。
+
+---
+
+# 十四、建议的阅读顺序
+
+1. `core/object/object.h` → `class_db.h` → `variant/variant.h`（对象模型与反射，一切绑定与脚本的基础）
+2. `core/templates/{cowdata,vector,hash_map,rid_owner}.h`（内存与容器约定）
+3. `main/main.cpp` 的 `setup()/start()`（看清初始化顺序）
+4. `servers/rendering/rendering_server.h` + `renderer_rd/renderer_scene_render_rd.cpp`（渲染主线）
+5. `scene/main/node.h` → `scene_tree.h` → `viewport.h`（场景与主循环）
+6. 挑一个具体功能纵向读：例如 `scene/2d/sprite_2d.*` → `RenderingServer` 对应方法 → RD 实现
+7. 想看编辑器：`editor/editor_node.h` → `editor_data.h` → `editor/docks/*` → `editor/plugins/editor_plugin.h`
+8. 想加功能：先看目标目录的 `SCsub`/`config.py`，再顺着 `register_*_types.cpp` 找注册点
+
+---
+
+需要的话，我可以继续把某一层展开成**逐文件、带 `#include` 级依赖**的细表（例如 `core/io` 107 个文件的完整依赖矩阵，或 `editor/scene/3d` 的 gizmo 体系），也可以按"我想改 XX 功能，应该动哪些文件"的方式反向索引。

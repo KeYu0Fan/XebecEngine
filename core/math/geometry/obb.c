@@ -1,0 +1,6 @@
+#include "obb.h"
+#if COM_USE(CONFIG_MATH_MATRIX) && COM_USE(CONFIG_MATH_VECTOR) && COM_USE(CONFIG_MATH_GEOMETRY)
+
+
+
+#endif

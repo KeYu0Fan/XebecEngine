@@ -1,0 +1,289 @@
+core  //核心
+{
+    algo  //算法
+    {
+        algo.h  //聚合头
+        sort.c/h  //排序
+    }
+    as  //解析
+    {
+        as.h  //聚合头
+        ini.c/h  //ini
+        json.c/h //josn
+    }
+    diag  //诊断
+    {
+    diag.h  //聚合头
+    err.c/h  //错误码
+    relay.c/h  //转播
+    debug.c/h  //调试
+    log.c/h  //日志
+    }
+    math  //数学
+    {
+        geometry  //几何
+        {
+            aabb.c/h  //轴对齐包围盒
+            sphere.c/h  //球
+            plane.c/h  //平面 法线
+            ray.c/h  //射线
+            segment.c/h  //线段
+            triangle.c/h  //三角形
+            capsule.c/h  //胶囊体
+            obb.c/h  //有向包围盒
+            transform.c/h  //变换
+            frustum.c/h  //视锥体
+            intersect.c/h  //相交测试
+            geometry.h  //聚合头
+        }
+        matrix  //矩阵
+        {
+            mat2.c/h
+            mat3.c/h
+            mat4.c/h
+            matrix.h  //聚合头
+        }
+        quat  //四元数
+        {
+            quat.c/h  //四元数
+            quat_convert.h  //四元数与矩阵/欧拉角/TRS 互转
+        }
+        STATIC  //内部隐藏
+        utils  //工具
+        {
+            color.c/h  //颜色
+            curve.c/h  //曲线插值
+            fixed.c/h  //定点数
+            half.c/h  //半精度浮点数
+            noise.c/h  //噪声
+            random.c/h  //随机数
+            utils.h  //聚合头
+        }
+        vector  //矢量
+        {
+            vec2.c/h
+            vec3.c/h
+            vec4.c/h
+            vector.h  //聚合头
+            vec_convert.c/h
+        }
+        constants.h  //常量
+        math.h  //聚合头
+        scalar.h  //标量
+    }
+    mory  //分配器
+    {
+        mory.c/h  //内存分配器
+    }
+    resmgr  //资源管理器
+    {
+    
+    }
+    struct  //数据结构
+    {
+        arena.c/h  //内存结构 添加了段回收机制
+        array.c/h  //数组
+        buffer.c/h  //缓冲区 添加了是否覆盖机制
+        hash.c/h  //哈希表 侵入式的链地址法
+        life.c/h  //生命计数 
+        list.c/h  //链表 添加了是否为环机制
+        realm.c/h  //内存结构 通过节点和引用实现空洞的快速复用
+        string.c/h  //asllc字符串
+        struct.h  //聚合头
+        var.c/h  //泛类型变量 通过契约创建类型
+    }
+    system  //系统
+    {
+        STATIC  //内部隐藏
+        cmd.c/h  //命令
+        console.c/h  //控制台 只有重置设置获取机制 聚合头不存在此
+        dynlib.c/h  //链接动态库
+        env.c/h  //环境变量
+        file.c/h  //文件
+        info.c/h  //系统信息
+        mmap.c/h  //内存
+        net.c/h  //网络
+        pipe.c/h  //管道
+        priv.c/h  //权限
+        process.c/h  //进程
+        system.h  //聚合头
+        thread.c/h  //线程
+        time.c/h  //时间
+    }
+    comdef.h  //通用宏定义
+    config.h  //核心启用宏
+    core.h  //核心聚合头
+    eximport.h  //导出导入 cpp适配 内联 宏
+    format.c/h  //格式转换
+    mem.c/h  //内存操作
+    platform.h  //平台宏
+    typedef.h  //基础类型定义
+}
+doc  //文档
+{
+    结构.txt
+    架构.txt  //分层依赖与构建约束
+    godot.txt
+    godot结构.txt  //Godot 层级/子模块文件夹参考
+    依赖.txt
+    test  //测试
+    {
+        math  //数学测试
+        {
+            README.txt  //说明
+            run.ps1  //构建并运行全部测试
+            test_math_core.c
+            test_math_geometry.c
+            test_math_edge.c
+            test_math_layout.c
+            test_math_api.c
+            test_math_primitives.c
+        }
+    }
+}
+drivers  //驱动
+{
+    audio  //音频
+    {
+        wasapi  //Windows
+        alsa  //Linux
+        pulseaudio  //Linux
+        coreaudio  //macOS
+        opensl  //Android
+        null  //无音频
+    }
+    camera  //摄像头
+    {
+        windows
+        linux
+        android
+        macos
+    }
+    gfx  //图形
+    {
+        vulkan  //Vulkan
+        opengl  //OpenGL/GLES
+        d3d12  //D3D12
+        metal  //Metal
+        null  //无图形
+    }
+    input  //输入
+    {
+        windows
+        linux
+        android
+        macos
+    }
+    sensor  //传感器
+    {
+    
+    }
+    video  //视频
+    {
+    
+    }
+}
+editor  //编辑器
+{
+    app  //入口/主控
+    asset_browser  //资源浏览器
+    docks  //停靠面板
+    viewport  //视口
+    inspector  //属性检查器
+    scene  //场景层级
+    project  //项目管理
+    export  //导出
+    import  //导入管线
+    script  //脚本编辑
+    debugger  //调试面板
+    plugins  //插件
+    settings  //设置
+    theme  //主题
+    tools  //工具
+}
+misc  //杂项
+{
+    ci  //持续集成
+    dist  //发行
+    icons  //图标
+    scripts  //脚本
+}
+modules  //模块
+{
+    script  //脚本
+    physics  //物理后端
+    image  //图像格式
+    audio  //音频编解码
+    video  //视频编解码
+    navigation  //导航
+    xr  //XR 运行时
+    system  //系统扩展
+    {
+        net  //网络
+    }
+}
+platform  //平台
+{
+    platform.h  //通用接口(窗口/事件/能力)
+    types.h  //擦除类型/POD
+    windows  //Win32
+    linux  //Linux
+    android  //Android
+    macos  //macOS
+    ios  //iOS
+    web  //Web
+    headless  //无头/服务器
+}
+scene  //场景
+{
+    main  //节点/场景树/视口
+    2d  //2D 节点
+    3d  //3D 节点
+    gui  //GUI 控件
+    resources  //资源类型
+    animation  //动画
+    audio  //音频节点
+    theme  //主题
+    debugger  //场景调试
+}
+servers  //服务
+{
+    display  //显示/窗口
+    render  //渲染
+    audio  //音频
+    input  //输入/动作
+    movie_writer  //视频录制
+    physics_2d  //2D 物理
+    {
+        physics.h  //主接口: 世界/步进/查询
+        types.h  //RID/描述/擦除类型
+        world  //空间/步进/重力/粗筛
+        body  //静态/运动学/刚体
+        shape  //形状创建/变换
+        joint  //约束/关节
+        query  //射线/形状扫描/重叠
+        character  //角色控制器
+        material  //摩擦/弹性/碰撞层
+    }
+    physics_3d  //3D 物理
+    {
+        physics.h  //主接口: 世界/步进/查询
+        types.h  //RID/描述/擦除类型
+        world  //空间/步进/重力/粗筛
+        body  //静态/运动学/刚体
+        shape  //形状创建/变换
+        joint  //约束/关节
+        query  //射线/形状扫描/重叠
+        character  //角色控制器
+        material  //摩擦/弹性/碰撞层
+    }
+    navigation  //导航
+    text  //文本
+    camera  //摄像头
+    xr  //XR
+    debugger  //调试
+}
+thirdparty  //第三方
+{
+    
+}

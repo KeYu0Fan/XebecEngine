@@ -1,0 +1,169 @@
+Xebec 架构
+===========
+
+定位
+----
+Xebec 是引擎库/工具层，宿主工程持有 main、窗口循环和资源目录。
+本仓库不提供 main/ 与 assets/，只按层产出库，由宿主工程链接。
+
+依赖 DAG
+--------
+editor
+ |-- scene
+ |    |-- servers
+ |    |    |-- platform
+ |    |    |    |-- drivers
+ |    |    |    |    |-- thirdparty
+ |    |    |    |    +-- core
+ |    |    |    +-- core
+ |    |    +-- core
+ |    +-- core
+ |-- servers
+ |-- platform
+ |-- drivers
+ |-- core
+ +-- thirdparty
+
+modules -> core（按需依赖其他层）
+assets  -> 宿主资源，不参与编译依赖
+
+依赖规则
+--------
+1. 只能向下依赖，禁止向上 include：servers 不 include scene/editor，
+   drivers 不 include platform/servers。
+2. 同层尽量不互相依赖；scene 内部 2d/3d/gui 可互相使用。
+3. drivers 不 include platform，只接收原生句柄（void* window），
+   由 platform 负责窗口/事件，再把句柄交给 drivers 创建 surface/swapchain。
+4. scene 虽然可以直接依赖 platform/drivers，但建议只经 servers 使用，
+   避免换后端时牵动场景层。
+5. modules 是旁挂层，通过注册函数挂入 servers/scene，不被主链反向依赖。
+6. assets 运行时由 resmgr 加载，不进入编译依赖。
+
+分层职责
+--------
+editor     编辑器/工具层：视口、层级、属性、资源浏览
+scene      场景层：节点树、transform、资源、序列化、2d/3d/gui
+servers    服务层：display/render/audio/physics 抽象、RID、帧调度
+platform   平台层：OS、窗口、事件、DisplayServer、上下文装配
+drivers    驱动层：Vulkan/D3D12、WASAPI/ALSA、输入设备
+core       核心层：算法、容器、数学、内存、system
+thirdparty 第三方源码
+modules    可选模块：脚本、物理后端、图像格式等
+assets     宿主资源（不在本仓库）
+
+类型擦除与边界约定
+------------------
+公共头可以定义类型，但只能是无信息/擦除类型；平台类型只出现在实现侧。
+参考 system 的现状：
+
+  typedef void* system_handle_h;                  /* 句柄 */
+  typedef void* (system_mutex_t)[COM_UNITS(64)];  /* 固定存储 */
+
+三类形态：
+1. 句柄：
+     typedef void* gfx_device_h;        或  typedef u64_t platform_window_h;
+   只承载地址/编号，实现侧转成 HWND / VkDevice / fd。
+2. 固定存储：
+     typedef void* (system_mutex_t)[COM_UNITS(64)];
+   调用方可以按值嵌入结构体；大小按平台最大类型取整，实现侧强转。
+3. 不透明结构：
+     struct gfx_swapchain;  +  struct gfx_swapchain*;
+   堆上分配，内部布局可随时变化。
+
+约定：
+- 命名：*_h 是句柄；*_t 是可按值存储的擦除类型；struct xxx 是不透明对象。
+- 公共头不 include 平台 SDK，不出现 HWND / pthread_t / VkDevice 等类型。
+- 平台 SDK 头只出现在 platform/<os>/、drivers/<backend>/ 的私有头或 .c 中。
+- 固定存储用 COM_UNITS(n) 保证按 void* 向上取整；私有头对每个平台类型做
+  COM_STATIC_ASSERT(sizeof(平台类型) <= sizeof(擦除类型))。
+- 对齐单独检查：void* 数组的对齐是 8(x64)/4(x86)；若平台类型要求更高，
+  需要对齐断言，或让存储类型带 max_align 成员。
+- 强转集中在实现侧，不要散落到调用方。
+- system 目前把擦除类型放在 STATIC/def.h；后续可拆出 system/types.h，
+  公共头只 include types.h，不再直接依赖 STATIC/。
+
+示例：
+  platform/platform.h       typedef void* platform_window_h;
+  platform/windows/window.c HWND h = (HWND)window;
+  drivers/gfx/gfx.h         typedef void* gfx_device_h;
+  drivers/gfx/vulkan/device.c VkDevice d = (VkDevice)device;
+
+接口放置规则
+------------
+1. 每层/子系统的主接口放在该层根目录：
+     platform/platform.h        // 窗口/事件/能力/生命周期
+     platform/types.h           // 擦除类型/POD
+     drivers/gfx/gfx.h
+     drivers/audio/audio.h
+     drivers/input/input.h
+     servers/<子系统>/<子系统>.h
+2. 平台/后端实现放子目录，且不导出公共头：
+     platform/windows/  platform/linux/  platform/android/ ...
+     drivers/gfx/vulkan/  drivers/gfx/d3d12/  drivers/gfx/opengl/
+     drivers/audio/wasapi/  drivers/audio/alsa/
+     drivers/input/windows/  drivers/input/linux/
+3. platform 不单设 window/ 子目录：窗口/事件类型直接放 platform.h 或 types.h；
+   若将来平台 API 继续拆分，再引入子目录，并由根 platform.h 聚合。
+4. 上层只 include 主接口头，不 include 子目录实现头。
+5. 驱动后端的选择在构建期完成（一个 h 多个 c，只编一个）；运行期切换留给
+   servers 的函数表。
+
+构建目标
+--------
+core.lib
+drivers.lib        <- core, thirdparty
+platform.lib       <- drivers, core
+servers.lib        <- platform, drivers, core
+scene.lib          <- servers, platform, drivers, core
+editor.lib/exe     <- 以上全部
+modules/*.lib      <- core + 按需下层
+
+每层对外只暴露 PORT_API 的接口与生命周期函数；层与层之间不直接链接
+对方内部的 static 符号。先静态库，出现插件/编辑器需求后再切 DLL。
+
+初始化顺序（宿主）
+------------------
+core_init
+platform_init
+gfx_init
+servers_init
+scene_init
+[modules 注册]
+(宿主主循环)
+scene_term
+servers_term
+gfx_term
+platform_term
+core_term
+
+主循环与线程
+------------
+1. 主循环由宿主驱动，Xebec 不提供 main。
+2. Xebec 提供单步 API：display_poll_event、render_frame_begin/end。
+3. 渲染线程模型在 servers/render 内部决定，宿主不直接操作驱动线程。
+
+模块注册
+--------
+modules/<name>/register.c 导出 module_<name>_register()；
+由宿主或 xebec_init 按配置调用。模块只依赖 core 与所需下层。
+
+资源
+----
+宿主通过 resmgr 设置资源根路径与加载器；assets 不参与编译依赖。
+
+推进顺序
+--------
+M0  core 收尾（as/resmgr/diag）+ 构建脚本 + core 测试
+M1  drivers/gfx 离屏（Vulkan instance/device/命令/管线）
+M2  platform/win32 窗口与事件；drivers 交换链接入
+M3  servers/display + servers/render（RID、draw list、三角形）
+M4  drivers/input、drivers/audio + servers 对应服务
+M5  scene（节点树、transform、资源、场景加载）
+M6  editor 库层
+M7  modules（脚本、物理、图像格式）
+
+相关文档
+--------
+结构.txt  目录与文件清单
+架构.txt  本文件：分层、依赖、构建与初始化约束
+godot.txt 参考架构资料

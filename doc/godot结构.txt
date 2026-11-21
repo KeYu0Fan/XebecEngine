@@ -1,0 +1,96 @@
+Godot 结构参考（层级 -> 子模块文件夹）
+=====================================
+
+说明
+----
+只列每一层包含哪些子模块文件夹，不展开到文件；
+子模块内部的 .cpp/.h 不在此文档中。
+
+顶层
+----
+core/ main/ servers/ scene/ editor/ modules/ platform/ drivers/
+thirdparty/ doc/ tests/ misc/
+
+core/
+-----
+config/      全局单例（Engine/ProjectSettings）
+crypto/      密码学（AES/哈希/安全随机）
+debugger/    调试器与性能剖析
+error/       错误宏/错误码
+extension/   GDExtension 机制
+input/       输入事件/动作映射
+io/          文件/资源/网络/序列化
+math/        向量/矩阵/几何/数学函数
+object/      对象模型/反射/类注册
+os/          线程/内存/时间/主循环抽象
+profiling/   性能采样
+string/      字符串/StringName/翻译
+templates/   容器与内存模板
+variant/     Variant/Array/Dictionary/Callable
+
+servers/
+--------
+rendering/     渲染抽象（RenderingServer/RenderingDevice/渲染器）
+audio/         音频服务
+physics_2d/    2D 物理
+physics_3d/    3D 物理
+navigation_2d/ 2D 导航
+navigation_3d/ 3D 导航
+display/       显示/窗口/输入抽象
+text/          文本/字体/排版
+camera/        摄像头
+xr/            XR
+movie_writer/  视频录制
+debugger/      调试服务
+
+scene/
+------
+main/       节点/场景树/视口/窗口
+2d/         2D 节点
+3d/         3D 节点
+gui/        GUI 控件
+resources/  资源类型
+animation/  动画/Tween/状态机
+audio/      音频节点
+debugger/   场景调试
+theme/      主题
+
+editor/
+-------
+animation/ asset_library/ audio/ debugger/ doc/ docks/ export/ file_system/
+gui/ import/ inspector/ plugins/ project_manager/ project_upgrade/ run/
+scene/ script/ settings/ shader/ themes/ translations/ version_control/ icons/
+
+modules/
+--------
+每个模块一个文件夹，例如：
+gdscript/ mono/ gltf/ fbx/ csg/ gridmap/ jolt_physics/ ...
+
+platform/
+---------
+windows/ linuxbsd/ macos/ android/ ios/ visionos/ web/
+
+drivers/
+--------
+图形：vulkan/ d3d12/ metal/ gles3/
+上下文：egl/ gl_context/ sdl/
+音频：alsa/ pulseaudio/ coreaudio/ wasapi/ xaudio2/
+MIDI：alsamidi/ coremidi/ winmidi/
+平台公共：windows/ unix/ apple/ apple_embedded/
+其他：accesskit/ png/ backtrace/
+
+thirdparty/
+-----------
+按库一个文件夹。
+
+doc/ tests/ misc/
+-----------------
+doc    文档
+tests  单元测试
+misc   发行/CI/图标
+
+Xebec 的对应粒度
+----------------
+core 全展开（见 结构.txt）；
+其余层只列子模块文件夹，不继续展开；
+新增平台/后端时只增加文件夹，不改上层结构。
