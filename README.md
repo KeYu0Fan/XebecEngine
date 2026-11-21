@@ -4,7 +4,7 @@
 
 ## 状态
 
-- 语言：C（C11）
+- 语言：C（C99；MSVC 使用 /std:c11 编译）
 - 平台：Windows（后续扩展 Linux / Android）
 - 模块：core（math / struct / system / as / resmgr / diag / mory）
 - 上层骨架：drivers / platform / servers / scene / editor / modules
