@@ -37,8 +37,16 @@ PORT_API bool_t system_thread_join(system_thread_t thread, void** retval)
     if (thread == 0) return 0;
 #if PLATFORM_WINDOWS
     DWORD exit_code = 0;
-    if (GetExitCodeThread(thread, &exit_code) == 0)
+    if (WaitForSingleObject(thread, INFINITE) != WAIT_OBJECT_0)
+    {
+        CloseHandle(thread);
         return 0;
+    }
+    if (GetExitCodeThread(thread, &exit_code) == 0)
+    {
+        CloseHandle(thread);
+        return 0;
+    }
     if (retval)
         *retval = (void*)(uintptr_t)exit_code;
     return CloseHandle(thread) ? 1 : 0;

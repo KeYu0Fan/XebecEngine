@@ -291,7 +291,7 @@ PORT_API struct list_node* list_find(struct list* list, const void* value, cmp_t
 	struct list_node* node = list->head;
 	while (count && node)
 	{
-		if(cmp(list_parent(list,node), value) == 0)
+		if(cmp(list_parent(list,node), (void*)value) == 0)
 			return node;
 		node = node->next;
 		count--;

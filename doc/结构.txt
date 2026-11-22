@@ -128,16 +128,37 @@ doc  //文档
     依赖.txt
     test  //测试
     {
-        math  //数学测试
+        README.txt  //测试说明
+        run.ps1  //构建并运行全部 unit 测试
+        unit  //功能/行为测试
         {
-            README.txt  //说明
-            run.ps1  //构建并运行全部测试
-            test_math_core.c
-            test_math_geometry.c
-            test_math_edge.c
-            test_math_layout.c
-            test_math_api.c
-            test_math_primitives.c
+            math  //数学测试
+            {
+                README.txt  //说明
+                run.ps1  //构建并运行数学测试
+                test_math_core.c
+                test_math_geometry.c
+                test_math_edge.c
+                test_math_layout.c
+                test_math_api.c
+                test_math_primitives.c
+            }
+            struct  //struct测试
+            {
+                test_struct.c
+            }
+            system  //system测试
+            {
+                test_system.c
+            }
+        }
+        stress  //压力/并发测试
+        {
+            README.txt
+        }
+        bench  //性能基准
+        {
+            README.txt
         }
     }
 }

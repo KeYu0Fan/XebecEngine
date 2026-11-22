@@ -239,6 +239,28 @@ PORT_API system_process_t system_process_spawn(const char* path, const struct sy
 		/* si_ex */
 		si_ex.StartupInfo = si;
 		si_ex.StartupInfo.cb = sizeof(si_ex);
+		/* 去重 同一句柄可能同时作为 stdout/stderr 传入 */
+		if (inherit_actual > 1)
+		{
+			DWORD w = 0;
+			DWORD r = 0;
+			for (; r < inherit_actual; r++)
+			{
+				DWORD k = 0;
+				int dup = 0;
+				for (; k < w; k++)
+				{
+					if (inherit_handles[k] == inherit_handles[r])
+					{
+						dup = 1;
+						break;
+					}
+				}
+				if (dup == 0)
+					inherit_handles[w++] = inherit_handles[r];
+			}
+			inherit_actual = w;
+		}
 		/* attr_list 属性列表只装非控制台句柄 控制台句柄走 si */
 		if (inherit_actual > 0)
 		{

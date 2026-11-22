@@ -295,7 +295,6 @@ PORT_API char* str_chr(const char* dst, const char* src, qty_t dir)
 PORT_API char* str_str(const char* dst, const char* src, qty_t n)
 {
 	COM_RETURN(dst == 0 || src == 0, 0);
-	char* ret = 0;
 	qty_t srclen = 0;
 	qty_t dstlen = 0;
 	/* 限制边界 */
@@ -382,12 +381,11 @@ PORT_API char* str_str(const char* dst, const char* src, qty_t n)
 	}
 	else
 	{
-		qty_t n = dlen;
+		qty_t plen = dlen;
 		qty_t m = slen;
 		/* 计算跳转周期 */
 		qty_t l = 0;
 		qty_t p = 0;
-		unsigned char arr[(((unsigned char)-1) + 1)] = { 0 };
 		{
 			/* l 最大后缀 */
 			{
@@ -429,7 +427,7 @@ PORT_API char* str_str(const char* dst, const char* src, qty_t n)
 			}
 		}
 		const unsigned char* pos = (const unsigned char*)dst;
-		const unsigned char* end = pos + n - m;
+		const unsigned char* end = pos + plen - m;
 		while (pos <= end)
 		{
 			/* 匹配右半部分 */
@@ -450,7 +448,6 @@ PORT_API char* str_str(const char* dst, const char* src, qty_t n)
 		}
 		return 0;
 	}
-	return ret;
 }
 /*
 * 计算dst中是否包含src中任意字符的初始段长度 若未找到则返回0

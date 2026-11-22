@@ -1,5 +1,5 @@
 # Xebec math test runner (Windows / MSVC)
-# Usage: powershell -ExecutionPolicy Bypass -File doc\test\math\run.ps1 [-RepoRoot D:\Xebec]
+# Usage: powershell -ExecutionPolicy Bypass -File doc\test\unit\math\run.ps1 [-RepoRoot D:\Xebec]
 
 param(
     [string]$RepoRoot = ''
@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-    $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+    $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
 }
 
 $tests = @(

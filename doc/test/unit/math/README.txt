@@ -19,12 +19,12 @@ test_math_primitives.c  线段/三角形/胶囊体/OBB 及其两两求交
 ----
 在仓库根目录执行：
 
-    powershell -ExecutionPolicy Bypass -File doc\test\math\run.ps1
+    powershell -ExecutionPolicy Bypass -File doc\test\unit\math\run.ps1
 
 脚本会自动通过 vswhere 查找 MSVC 的 vcvars64.bat；也可以先打开
 "x64 Native Tools Command Prompt"，再执行：
 
-    powershell -ExecutionPolicy Bypass -File doc\test\math\run.ps1
+    powershell -ExecutionPolicy Bypass -File doc\test\unit\math\run.ps1
 
 可选参数 -RepoRoot 用于指定仓库根（默认按脚本位置向上三级推断）。
 
