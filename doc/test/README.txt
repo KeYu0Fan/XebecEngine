@@ -5,17 +5,23 @@ doc/test 按测试类型分层:
 
   unit/      功能/行为测试（快速回归）
     math/    数学
+    format/  整数/浮点/十六进制格式转换
     struct/  数组/字符串/链表/哈希/缓冲区/var/life/arena
     system/  线程/时间/文件/目录/mmap/env/dynlib/pipe/console/cmd/priv/net/info/进程
   stress/    压力/并发测试（待补）
   bench/     性能基准（待补）
 
 运行全部 unit:
-  powershell -NoProfile -ExecutionPolicy Bypass -File doc\test\run.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File doc\test\run.ps1   (Windows / MSVC)
+  sh doc/test/run.sh                                                    (Linux / gcc)
+
+Linux 依赖:
+  build-essential, libcap-dev (priv.c 使用 sys/capability.h)
+  链接使用 -pthread -ldl -lm -lcap
 
 脚本会:
   1. 调用 unit/math/run.ps1;
-  2. 构建并运行 unit/struct 与 unit/system;
+  2. 构建并运行 unit/format、unit/struct 与 unit/system;
   3. 任一失败返回非零.
 
 说明:

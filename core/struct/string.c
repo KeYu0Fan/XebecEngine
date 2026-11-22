@@ -7,6 +7,9 @@
 PORT_HIDE static qty_t high = COM_REPEAT_PATTERN(COM_BYTE_HIGH, qty_t, COM_BYTE_REPEAT);
 PORT_HIDE static qty_t low = COM_REPEAT_PATTERN(COM_BYTE_LOW, qty_t, COM_BYTE_REPEAT);
 
+/* 判断机器字中是否存在 '\0' 字节 */
+#define STR_HAS_ZERO(x) (((x) - low) & ~(x) & high)
+
 PORT_HIDE static void SetArr(char dst[STRUCT_STRING_SIZE], const char* src)
 {
 	COM_RETURN(dst == 0 || src == 0, );
@@ -85,16 +88,14 @@ PORT_API qty_t str_len(const char* dst, qty_t n)
 PORT_API cmp_t str_cmp(const char* dst, const char* src, qty_t n)
 {
 	COM_RETURN(dst == 0 || src == 0 || n == 0, 0);
-	/* 限制边界 */
-	qty_t size = 0;
-	n = str_len(dst, n - 1) + 1;
 	/* 对齐 */
-	size = n < COM_SMALL_SIZE ? n : GetOff(dst, 0);
+	qty_t size = n < COM_SMALL_SIZE ? n : GetOff(dst, 0);
 	if (size)
 	{
 		qty_t i = 0;
 		while (i < size && *dst == *src)
 		{
+			if (*dst == '\0') return (cmp_t)0;
 			dst++;
 			src++;
 			i++;
@@ -110,7 +111,7 @@ PORT_API cmp_t str_cmp(const char* dst, const char* src, qty_t n)
 		qty_t* S = (qty_t*)src;
 		if ((PLATFORM_ALIGN && off) == 0)
 		{
-			while (n - i >= sizeof(qty_t) && *D == *S)
+			while (n - i >= sizeof(qty_t) && *D == *S && STR_HAS_ZERO(*D) == 0)
 			{
 				D++;
 				S++;
@@ -123,7 +124,7 @@ PORT_API cmp_t str_cmp(const char* dst, const char* src, qty_t n)
 			qty_t value = *S++;
 			qty_t L = off * COM_BYTE_BIT;
 			qty_t R = sizeof(qty_t) * COM_BYTE_BIT - L;
-			while (n - i >= sizeof(qty_t) && *D == (value << L | *S >> R))
+			while (n - i >= sizeof(qty_t) && *D == (value << L | *S >> R) && STR_HAS_ZERO(value << L | *S >> R) == 0)
 			{
 				value = *S;
 				D++;
@@ -146,6 +147,7 @@ PORT_API cmp_t str_cmp(const char* dst, const char* src, qty_t n)
 		qty_t i = size;
 		while (i < n && *dst == *src)
 		{
+			if (*dst == '\0') return (cmp_t)0;
 			dst++;
 			src++;
 			i++;
@@ -531,7 +533,7 @@ PORT_API char* str_rev(char* dst, qty_t n)
 	COM_RETURN(dst == 0 || n == 0, 0);
 	if (*dst == 0) return dst;
 	char* left = dst;
-	char* right = dst + str_len(dst, n) - 1;
+	char* right = dst + n - 1;
 	char value = 0;
 	while (left < right)
 	{

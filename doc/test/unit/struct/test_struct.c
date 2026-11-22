@@ -54,6 +54,8 @@ static void test_string(void)
 	const char* tok = "a,b,c";
 	CHECK(str_len("abc", (qty_t)-1) == 3);
 	CHECK(str_cmp("abc", "abd", 3) < 0);
+	CHECK(str_cmp("abc", "abc", (qty_t)-1) == 0);
+	CHECK(str_cmp("abc", "abd", (qty_t)-1) < 0);
 	CHECK(str_cpy(sbuf, "hello", 6) == sbuf);
 	CHECK(str_cmp(sbuf, "hello", 6) == 0);
 	CHECK(str_cat(sbuf, " world", 7) != 0);

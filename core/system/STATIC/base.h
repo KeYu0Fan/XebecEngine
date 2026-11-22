@@ -38,15 +38,20 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <poll.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <sys/sysinfo.h>
-#include <sys/capability.h>
-#include <sys/sysconf.h>
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 #else
 /**/
 #endif

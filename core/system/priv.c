@@ -3,6 +3,9 @@
 
 
 #include "core/system/STATIC/base.h"
+#if PLATFORM_POSIX
+#include <sys/capability.h>
+#endif
 
 /* 启用指定的特权 */
 PORT_API bool_t system_priv_open(enum system_priv_t priv)

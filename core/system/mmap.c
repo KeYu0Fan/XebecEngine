@@ -298,6 +298,7 @@ PORT_API bool_t system_mmap_unlock(void* ptr, qty_t size)
     return 0;
 #endif
 }
+#if PLATFORM_WINDOWS
 PORT_HIDE static void system_mmap_advise_aux_00(void)
 {
     if (hKernel == 0)
@@ -309,6 +310,7 @@ PORT_HIDE static void system_mmap_advise_aux_00(void)
     if (pDiscard == 0)
         pDiscard = (DiscardVirtualMemory_t)GetProcAddress(hKernel, "DiscardVirtualMemory");
 }
+#endif
 /* 设置内存的策略行为 advice建议类型 */
 PORT_API bool_t system_mmap_advise(void* ptr, qty_t size, enum system_mmap_advise_value advice)
 {

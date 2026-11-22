@@ -55,7 +55,7 @@ PORT_API qty_t str_span(const char* dst, const char* src, qty_t is);
 PORT_API qty_t str_tok(const char** dst, const char* tok, qty_t table);
 /*
 * 反转并修改字符串头尾顺序 返回字符串地址
-* n为反转长度 反转长度不会超过'\0'
+* n为反转长度 反转长度不能超过'\0'
 */
 PORT_API char* str_rev(char* dst,qty_t n);
 /*

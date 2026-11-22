@@ -20,11 +20,11 @@ PORT_API bool_t system_console_init(void)
 	console_h[2] = (system_handle_h)GetStdHandle(STD_ERROR_HANDLE);
 	return 1;
 #elif PLATFORM_POSIX
-	console_h[0] = (system_handle_h)dup(0);
-	console_h[1] = (system_handle_h)dup(1);
-	console_h[2] = (system_handle_h)dup(2);
-	if ((int)console_h[0] < 0 || (int)console_h[1] < 0 || (int)console_h[2] < 0)
-		return ERR_FAIL;
+	console_h[0] = (system_handle_h)(intptr_t)dup(0);
+	console_h[1] = (system_handle_h)(intptr_t)dup(1);
+	console_h[2] = (system_handle_h)(intptr_t)dup(2);
+	if ((int)(intptr_t)console_h[0] < 0 || (int)(intptr_t)console_h[1] < 0 || (int)(intptr_t)console_h[2] < 0)
+		return 0;
 	return 1;
 #else
 	return 0;
@@ -51,7 +51,7 @@ PORT_API bool_t system_console_set(qty_t which, system_handle_h handle)
 		: STD_ERROR_HANDLE;
 	return SetStdHandle(id, (HANDLE)handle) ? 1 : 0;
 #elif PLATFORM_POSIX
-	return dup2((int)handle, (int)which) >= 0 ? 1 : 0;
+	return dup2((int)(intptr_t)handle, (int)which) >= 0 ? 1 : 0;
 #else
 	return 0;
 #endif
@@ -67,7 +67,7 @@ PORT_API system_handle_h system_console_get(qty_t which)
 		: STD_ERROR_HANDLE;
 	return (system_handle_h)GetStdHandle(id);
 #elif PLATFORM_POSIX
-	return (system_handle_h)which;
+	return console_h[which];
 #else
 	return 0;
 #endif
@@ -99,7 +99,7 @@ PORT_API bool_t system_console_read(system_handle_h fp, void* buf, qty_t count, 
 #elif PLATFORM_POSIX
 	while (count > 0)
 	{
-		ssize_t ret = read((int)(qty_t)fp - 1, buf_tmp, (size_t)count);
+		ssize_t ret = read((int)(intptr_t)fp, buf_tmp, (size_t)count);
 		if (ret < 0)
 		{
 			if (*buf_size) return 1;
@@ -142,7 +142,7 @@ PORT_API bool_t system_console_write(system_handle_h fp, const void* buf, qty_t 
 #elif PLATFORM_POSIX
 	while (count > 0)
 	{
-		ssize_t ret = write((int)(qty_t)fp - 1, buf_tmp, (size_t)count);
+		ssize_t ret = write((int)(intptr_t)fp, buf_tmp, (size_t)count);
 		if (ret < 0)
 		{
 			if (*buf_size > 0) return 1;

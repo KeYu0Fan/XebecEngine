@@ -129,7 +129,8 @@ doc  //文档
     test  //测试
     {
         README.txt  //测试说明
-        run.ps1  //构建并运行全部 unit 测试
+        run.ps1  //Windows 构建并运行全部 unit 测试
+        run.sh  //Linux 构建并运行全部 unit 测试
         unit  //功能/行为测试
         {
             math  //数学测试
@@ -142,6 +143,10 @@ doc  //文档
                 test_math_layout.c
                 test_math_api.c
                 test_math_primitives.c
+            }
+            format  //格式转换测试
+            {
+                test_format.c
             }
             struct  //struct测试
             {

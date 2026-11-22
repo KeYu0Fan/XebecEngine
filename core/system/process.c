@@ -587,7 +587,10 @@ PORT_API bool_t system_process_close(system_process_t proc)
 	return CloseHandle(proc) ? 1 : 0;
 #elif PLATFORM_POSIX
 	int status;
-	return (waitpid((pid_t)(qty_t)proc, &status, 0) == (pid_t)(qty_t)proc) ? 1 : 0;
+	pid_t ret = waitpid((pid_t)(qty_t)proc, &status, 0);
+	if (ret == (pid_t)(qty_t)proc) return 1;
+	if (ret == -1 && errno == ECHILD) return 1;
+	return 0;
 #else
 	return 0;
 #endif

@@ -5,7 +5,6 @@
 #include "core/eximport.h"
 #include "core/typedef.h"
 #include "core/comdef.h"
-#include "core/config.h"
 EXTERN_C_BEGIN
 
 /* 数组 */

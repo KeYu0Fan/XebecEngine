@@ -3,6 +3,7 @@
 
 
 #include "core/system/STATIC/base.h"
+#include "core/system/STATIC/string.h"
 #include "core/system/thread.h"
 
 #if PLATFORM_WINDOWS
@@ -364,7 +365,8 @@ PORT_API bool_t system_info_get_hostname(char* buf, qty_t size)
         return 1;
     }
     return 0;
-#else    return 0;
+#else
+    return 0;
 #endif
 }
 /* 获取系统启动后的运行时间s */

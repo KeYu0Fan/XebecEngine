@@ -486,7 +486,7 @@ PORT_API bool_t system_once_run(system_once_init* once, void (*fn)(void))
     conv.fn = fn;
     return InitOnceExecuteOnce((PINIT_ONCE)once, system_once_run_aux_00, conv.ptr, (void*)0);
 #elif PLATFORM_POSIX
-    return (pthread_once(once, fn) == 0) ? 1 : 0;
+    return (pthread_once((pthread_once_t*)once, fn) == 0) ? 1 : 0;
 #else
     return 0;
 #endif
