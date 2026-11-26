@@ -1,5 +1,5 @@
-#ifndef LOG_LOG_H
-#define LOG_LOG_H
+#ifndef DIAG_LOG_H
+#define DIAG_LOG_H
 #include "core/platform.h"
 #include "core/eximport.h"
 #include "core/typedef.h"

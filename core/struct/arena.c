@@ -195,6 +195,14 @@ PORT_API qty_t arena_live(struct arena* arena)
 	COM_RETURN(arena == 0, 0);
 	return arena->stat.live;
 }
+/* 获取剩余可分配 inner决定是否需要当前池的剩余 */
+PORT_API qty_t arena_remain(struct arena* arena, qty_t inner)
+{
+	COM_RETURN(arena == 0, 0);
+	qty_t size = (arena->count * arena->size) - arena->stat.curt;
+	if (inner) size += arena->size - arena->bump->used;
+	return size;
+}
 /* 获取内存管理可能大小 */
 PORT_API qty_t arena_size(qty_t size, qty_t count)
 {
@@ -216,6 +224,7 @@ PORT_API qty_t arena_curt(struct arena* arena) { ; }
 PORT_API qty_t arena_peak(struct arena* arena) { ; }
 PORT_API qty_t arena_total(struct arena* arena) { ; }
 PORT_API qty_t arena_live(struct arena* arena) { ; }
+PORT_API qty_t arena_remain(struct arena* arena, qty_t inner) { ; }
 PORT_API qty_t arena_size(qty_t size, qty_t count) { ; }
 
 

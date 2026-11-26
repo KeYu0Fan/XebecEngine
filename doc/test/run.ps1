@@ -1,4 +1,4 @@
-# Build and run unit tests (math / format / struct / system)
+# Build and run unit tests (math / format / as / struct / system)
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File doc\test\run.ps1
 $ErrorActionPreference = 'Stop'
 
@@ -23,6 +23,17 @@ $commonArgs = @('/nologo', '/W4', '/utf-8', '/std:c11', "/I$root")
 # format
 $formatSources = @("$root\doc\test\unit\format\test_format.c", "$root\core\format.c", "$root\core\mem.c")
 $formatArgs = $commonArgs + @('/Fe:test_format.exe') + $formatSources + @('/link', 'advapi32.lib', 'user32.lib')
+
+# as/ini
+$asSources = @(
+    "$root\doc\test\unit\as\test.c",
+    "$root\core\as\ini.c",
+    "$root\core\error.c",
+    "$root\core\struct\arena.c",
+    "$root\core\struct\string.c",
+    "$root\core\mem.c"
+)
+$asArgs = $commonArgs + @('/Fe:test_as.exe') + $asSources + @('/link', 'advapi32.lib', 'user32.lib')
 
 # struct: exclude realm.c
 $structSources = @("$root\doc\test\unit\struct\test_struct.c")
@@ -51,6 +62,7 @@ function Build([string]$exe, [string[]]$clArgs) {
 }
 
 Build 'test_format.exe' $formatArgs
+Build 'test_as.exe' $asArgs
 Build 'test_struct.exe' $structArgs
 Build 'test_system.exe' $sysArgs
 Write-Host 'all unit tests passed'

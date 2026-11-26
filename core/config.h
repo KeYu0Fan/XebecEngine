@@ -5,9 +5,11 @@
 /* core */
 #define CONFIG_CORE_MEM         1/* 内存操作 */
 #define CONFIG_CORE_FORMAT      1/* 格式 */
+#define CONFIG_CORE_ERROR       1/* 错误码 */
 
 /* as */
-
+#define CONFIG_AS_INI           1/* ini */
+#define CONFIG_AS_JSON          1/* json */
 
 /* log */
 

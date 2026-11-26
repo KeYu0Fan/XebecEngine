@@ -1,5 +1,5 @@
 #include "log.h"
-#if COM_USE(CONFIG_LOG_LOG)
+#if COM_USE(CONFIG_DIAG_DIAG)
 
 
 #include "core/struct/string.h"

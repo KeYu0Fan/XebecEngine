@@ -1,0 +1,36 @@
+依赖关系
+========
+
+core 内部
+--------
+platform/typedef/comdef/config   无外部依赖
+mem                             无
+format                          mem
+error                           无(仅 typedef)
+math                            无
+struct                          mem
+system                          core(platform/system 自有 STATIC/string)
+as/ini                          struct(arena/string), error
+as/json                         未实现
+diag/log                        system(thread/time)
+diag/debug                      无(尚未实现)
+mory                            system(thread/mmap/time), mem
+resmgr                          未实现
+
+测试
+----
+math      仅 math 头文件
+format    core/format.c + core/mem.c
+struct    core/struct/*(除 realm) + core/mem.c + core/algo/sort.c
+system    core/system/*.c
+as/ini    core/as/ini.c + core/error.c + core/struct/{arena,string}.c + core/mem.c
+
+平台
+----
+Windows: MSVC, 链接 advapi32/user32/ws2_32(部分源文件带 pragma)
+Linux:   gcc, 需要 build-essential 与 libcap-dev,
+         链接 -pthread -ldl -lm -lcap
+
+第三方
+------
+暂无. 若 JSON 采用 cJSON/yyjson, 放 thirdparty/ 下, 只在 core/as/json.c 内引用.

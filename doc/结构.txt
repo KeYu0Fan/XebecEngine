@@ -13,11 +13,10 @@ core  //核心
     }
     diag  //诊断
     {
-    diag.h  //聚合头
-    err.c/h  //错误码
-    relay.c/h  //转播
-    debug.c/h  //调试
-    log.c/h  //日志
+        debug.c/h  //调试
+        log.c/h  //日志
+        diag.h  //聚合头
+        relay.c/h  //转播
     }
     math  //数学
     {
@@ -113,6 +112,8 @@ core  //核心
     comdef.h  //通用宏定义
     config.h  //核心启用宏
     core.h  //核心聚合头
+    error.c/h  //错误码转字符串
+    errorcode.h  //错误码枚举
     eximport.h  //导出导入 cpp适配 内联 宏
     format.c/h  //格式转换
     mem.c/h  //内存操作
@@ -123,6 +124,7 @@ doc  //文档
 {
     结构.txt
     架构.txt  //分层依赖与构建约束
+    状态.txt  //当前模块与测试状态
     godot.txt
     godot结构.txt  //Godot 层级/子模块文件夹参考
     依赖.txt
@@ -147,6 +149,10 @@ doc  //文档
             format  //格式转换测试
             {
                 test_format.c
+            }
+            as  //as测试
+            {
+                test.c  //ini 测试
             }
             struct  //struct测试
             {

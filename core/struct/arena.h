@@ -78,6 +78,8 @@ PORT_API qty_t arena_peak(struct arena* arena);
 PORT_API qty_t arena_total(struct arena* arena);
 /* 获取总存活数 */
 PORT_API qty_t arena_live(struct arena* arena);
+/* 获取剩余可分配 inner决定是否需要当前池的剩余 */
+PORT_API qty_t arena_remain(struct arena* arena, qty_t inner);
 /* 获取内存管理 arena 可能大小 */
 PORT_API qty_t arena_size(qty_t size, qty_t count);
 

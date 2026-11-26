@@ -1,0 +1,59 @@
+Xebec 项目状态
+===============
+更新: 2026-11-26
+
+结论
+----
+core 主体完成; as/ini 完成(不含转义), as/json 为空壳; error 已独立;
+diag 有 log, debug/relay/diag.h 为空壳; mory 骨架, resmgr 空壳.
+测试覆盖 math/format/as/struct/system, Windows 与 Linux 均通过.
+
+模块状态
+--------
+core/math       完成: 向量/矩阵/四元数/几何/工具
+core/struct     完成: array/buffer/hash/list/string/var/life/arena
+                realm 有实现(110 行), 未测试
+core/system     完成: 线程/文件/时间/mmap/进程/网络/控制台等
+core/format     完成: dtos/utos/ftos/mtos
+core/error      完成: errorcode.h 枚举 + error.c/h 转字符串
+                已通过 as 测试链接
+core/as/ini     完成: 加载/保存/检查/查找/插入/删除/修改
+                根 section 为 ""; ini_load 已复制文本到 arena; 无转义
+core/as/json    空壳: json.c 6 行, json.h 17 行
+core/diag/log   实现: 84 行
+core/diag/debug 空壳: debug.c 4 行
+core/diag/relay 空壳: relay.c 4 行
+core/diag/diag.h 聚合头(空)
+core/mory       骨架: mory.c 59 行
+core/mem        完成: mem.c 427 行
+core/resmgr     空壳: cache/registry 未实现
+
+测试状态
+--------
+Windows: math/format/as/struct/system 全 PASS, 无警告
+Linux:   同上, 全 PASS (gcc + libcap-dev)
+as/ini:  doc/test/unit/as/test.c, 已接入 run.ps1/run.sh
+error:   通过 as 测试链接
+realm:   未测试
+
+未整合
+------
+1. json 未开始, 方案未定(自研 / cJSON / yyjson)
+2. realm 有实现但未接入测试
+3. mory 仅骨架, resmgr 空壳
+4. diag 的 debug/relay 仅空壳
+
+已知风险
+--------
+1. ini 没有转义; save 已拒绝 value 含 \r\n, key 含 =/\r\n,
+   section 名含 ]/\r\n, 但需在文档中写明.
+2. ini_safe 的边界测试仍少(空行、缺 ']'、CRLF), 目前只覆盖保存往返.
+3. JSON 若接第三方库, 需要决定内存所有权(arena 还是库自管 + json_free).
+4. realm 未测试, 不能算完成.
+
+下一步
+------
+1. 提交当前 ini/error/arena/doc 与测试接入;
+2. 决定 JSON: 先做只读包装(cJSON/yyjson)还是暂缓;
+3. 补 ini_safe 边界测试;
+4. 再考虑 realm / mory / resmgr.

@@ -24,6 +24,15 @@ run_test test_format \
     "$ROOT/core/format.c" \
     "$ROOT/core/mem.c"
 
+# as/ini
+run_test test_as \
+    "$ROOT/doc/test/unit/as/test.c" \
+    "$ROOT/core/as/ini.c" \
+    "$ROOT/core/error.c" \
+    "$ROOT/core/struct/arena.c" \
+    "$ROOT/core/struct/string.c" \
+    "$ROOT/core/mem.c"
+
 # struct: exclude realm.c
 STRUCT_SRC=""
 for f in "$ROOT"/core/struct/*.c; do
