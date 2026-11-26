@@ -3,7 +3,6 @@
 
 
 #include "core/errorcode.h"
-#include "core/mem.h"
 #include "core/struct/string.h"
 #include "core/struct/arena.h"
 
@@ -27,50 +26,31 @@ PORT_API struct ini* ini_init(struct arena* arena)
 PORT_API err_t ini_safe(const char* text, qty_t len)
 {
 	COM_RETURN(text == 0 || len == 0, ERROR_PARAMTER);
-	const char* p = text;
-	const char* end = text + len;
-	/* 跳过 UTF-8 BOM */
-	if (len >= 3 && (unsigned char)p[0] == 0xEF && (unsigned char)p[1] == 0xBB && (unsigned char)p[2] == 0xBF)
-		p += 3;
-	while (p < end)
+	const char* string = text;
+	const char* cap = text + len;
+	while (text)
 	{
-		const char* line = p;
-		while (p < end && *p != '\n' && *p != '\r' && *p != '\0') p++;
-		const char* line_end = p;
-		if (p < end && *p == '\0')
+		str_tok(&text, "\n", 0);
+		string += str_span(string, " \t", 0);
+		if (text >= cap) return ERROR_MEMORY_OVER;
+		if (*string == '\0') return ERROR_NULL;
+		if (*string == ';' || *string == '#')
 		{
-			if (p + 1 != end) return ERROR_SYNTAX;
-			p = end;
+			string = text;
+			continue;
 		}
-		else if (p < end)
+		if (*string == '[')
 		{
-			if (*p == '\r' && p + 1 < end && p[1] == '\n') p += 2;
-			else p++;
-		}
-		/* 行首/行尾 trim */
-		while (line < line_end && (*line == ' ' || *line == '\t')) line++;
-		while (line_end > line && (line_end[-1] == ' ' || line_end[-1] == '\t')) line_end--;
-		if (line == line_end) continue;
-		if (*line == ';' || *line == '#') continue;
-		if (*line == '[')
-		{
-			const char* close = line + 1;
-			while (close < line_end && *close != ']') close++;
-			if (close >= line_end) return ERROR_SYNTAX;
-			const char* t = close + 1;
-			while (t < line_end && (*t == ' ' || *t == '\t')) t++;
-			if (t != line_end) return ERROR_SYNTAX;
-			/* [] 作为根 section, 与 ini_load 保持一致 */
+			char* tmp = str_chr(string, "]", 1) + 1;
+			if (str_span(tmp, " \t", 0) == (text - tmp))
+				return ERROR_SYNTAX;
 		}
 		else
 		{
-			const char* eq = line;
-			while (eq < line_end && *eq != '=') eq++;
-			if (eq >= line_end) return ERROR_SYNTAX;
-			const char* key_end = eq;
-			while (key_end > line && (key_end[-1] == ' ' || key_end[-1] == '\t')) key_end--;
-			if (key_end == line) return ERROR_SYNTAX;
+			if (str_chr(string, "=", 0) == 0)
+				return ERROR_SYNTAX;
 		}
+		string = text;
 	}
 	return ERROR_NULL;
 }
@@ -96,6 +76,7 @@ PORT_API bool_t ini_save(struct ini* ini, char* text, qty_t len)
 		*text = '\n';
 		text++;
 		len--;
+		qty_t j = 0;
 		struct ini_entry* entry = sectn->entry;
 		if (entry == 0)
 		{
@@ -108,7 +89,7 @@ PORT_API bool_t ini_save(struct ini* ini, char* text, qty_t len)
 			if (str_chr(entry->value, "]\r\n", 0)) return 0;
 			qty_t jksize = str_len(entry->key, (qty_t)-1);
 			qty_t jvsize = str_len(entry->value, (qty_t)-1);
-			if (jksize + 1 + jvsize + 1 > len) return 0;
+			if (isize + 3 > len) return 0;
 			str_cpy(text, entry->key, jksize + 1);
 			text += jksize;
 			len -= jksize;
@@ -138,12 +119,7 @@ PORT_API struct ini* ini_load(struct arena* arena, const char* text, qty_t len)
 	COM_RETURN(arena == 0 || text == 0 || len == 0, 0);
 	struct ini* ini = ini_init(arena);
 	if (ini == 0) return 0;
-	/* 复制一份到 arena，避免修改调用方的 const 文本 */
-	char* copy = arena_new(arena, len + 1);
-	if (copy == 0) return 0;
-	mem_cpy(copy, text, len);
-	copy[len] = '\0';
-	char* texts = copy;
+	char* texts = (char*)text;
 	qty_t index = ((qty_t)-1);
 
 	char table[(((unsigned char)-1) + 1)];
@@ -152,9 +128,7 @@ PORT_API struct ini* ini_load(struct arena* arena, const char* text, qty_t len)
 	while (texts != 0)
 	{
 		char* string = texts;
-		const char* scan = texts;
-		qty_t size = str_tok(&scan, table, 1);
-		texts = (char*)scan;
+		qty_t size = str_tok(&texts, table, 1);
 		if (*string == ';' || *string == '#')
 			continue;
 		
