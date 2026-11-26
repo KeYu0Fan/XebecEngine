@@ -119,7 +119,7 @@ PORT_API struct ini* ini_load(struct arena* arena, const char* text, qty_t len)
 	COM_RETURN(arena == 0 || text == 0 || len == 0, 0);
 	struct ini* ini = ini_init(arena);
 	if (ini == 0) return 0;
-	char* texts = (char*)text;
+	const char* texts = text;
 	qty_t index = ((qty_t)-1);
 
 	char table[(((unsigned char)-1) + 1)];
@@ -127,7 +127,7 @@ PORT_API struct ini* ini_load(struct arena* arena, const char* text, qty_t len)
 
 	while (texts != 0)
 	{
-		char* string = texts;
+		char* string = (char*)texts;
 		qty_t size = str_tok(&texts, table, 1);
 		if (*string == ';' || *string == '#')
 			continue;
