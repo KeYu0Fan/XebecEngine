@@ -4,3 +4,5 @@
 *.txt  text eol=crlf
 *.md   text eol=lf
 *.sh   text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf

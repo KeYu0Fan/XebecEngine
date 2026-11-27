@@ -3,14 +3,29 @@
 x64/
 Debug/
 Release/
+bin/
+obj/
+out/
 *.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
 *.obj
 *.exe
 *.pdb
 *.ilk
+*.idb
+*.pch
+*.ipch
+*.tlog
+*.lastbuildstate
+*.recipe
+*.obj.dt.*
 *.log
 *.tmp
 
 # OS / editor
 .DS_Store
 Thumbs.db
+.vscode/
