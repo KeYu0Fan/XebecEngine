@@ -2,6 +2,12 @@
 /* ini
  * 插入设置等行为无合法验证 禁止传输含有非标准ini的字符串
  * 无转义能力
+ *
+ * 内存与所有权:
+ * - 不复制整段 text; 只把 section 名/key/value 逐条复制进 arena.
+ * - text 必须在 ini_load 调用期间可写且有效; 解析会原地写入分隔符并恢复.
+ * - 加载失败时 ini_load 会调用 arena_clear(arena);
+ *   arena 里不能同时放其他需要保留的对象, 否则会一起被清空.
  */
 #define AS_INI_H
 #include "core/platform.h"
@@ -36,6 +42,8 @@ struct ini
 
 /* 创建空白ini结构 */
 PORT_API struct ini* ini_init(struct arena* arena);
+/* 清空ini创建结构 非o1行为 */
+PORT_API void ini_clear(struct ini* ini);
 /* 检查text是否为合法的ini结构 */
 PORT_API err_t ini_safe(const char* text, qty_t len);
 /* 保存ini为可读取的字符串 如果保存导致再加载行为错误时返回失败 */

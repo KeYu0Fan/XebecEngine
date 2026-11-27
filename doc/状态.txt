@@ -1,6 +1,6 @@
 Xebec 项目状态
 ===============
-更新: 2026-11-26
+更新: 2026-11-27
 
 结论
 ----
@@ -18,7 +18,8 @@ core/format     完成: dtos/utos/ftos/mtos
 core/error      完成: errorcode.h 枚举 + error.c/h 转字符串
                 已通过 as 测试链接
 core/as/ini     完成: 加载/保存/检查/查找/插入/删除/修改
-                根 section 为 ""; ini_load 已复制文本到 arena; 无转义
+                根 section 为 ""; 不复制整段文本, 逐条复制 key/value;
+                ini_init 失败只释放自身; 无转义
 core/as/json    空壳: json.c 6 行, json.h 17 行
 core/diag/log   实现: 84 行
 core/diag/debug 空壳: debug.c 4 行
@@ -53,7 +54,7 @@ realm:   未测试
 
 下一步
 ------
-1. 提交当前 ini/error/arena/doc 与测试接入;
-2. 决定 JSON: 先做只读包装(cJSON/yyjson)还是暂缓;
-3. 补 ini_safe 边界测试;
-4. 再考虑 realm / mory / resmgr.
+1. 决定 JSON: 先做只读包装(cJSON/yyjson)还是暂缓;
+2. 补 ini_safe 边界测试;
+3. 再考虑 realm / mory / resmgr;
+4. 定义 diag 与各层接口.
